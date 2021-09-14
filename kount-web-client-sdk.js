@@ -9,9 +9,13 @@ require("core-js/modules/es.symbol.iterator.js");
 
 require("core-js/modules/es.array.concat.js");
 
+require("core-js/modules/es.array.for-each.js");
+
 require("core-js/modules/es.array.iterator.js");
 
 require("core-js/modules/es.map.js");
+
+require("core-js/modules/es.object.keys.js");
 
 require("core-js/modules/es.object.to-string.js");
 
@@ -51,12 +55,15 @@ require("core-js/modules/esnext.map.some.js");
 
 require("core-js/modules/esnext.map.update.js");
 
+require("core-js/modules/web.dom-collections.for-each.js");
+
 require("core-js/modules/web.dom-collections.iterator.js");
 
 Object.defineProperty(exports, "__esModule", {
   value: true
 });
 exports.default = kountSDK;
+exports.KountSDKVersion = void 0;
 
 require("regenerator-runtime/runtime.js");
 
@@ -76,416 +83,401 @@ function asyncGeneratorStep(gen, resolve, reject, _next, _throw, key, arg) { try
 
 function _asyncToGenerator(fn) { return function () { var self = this, args = arguments; return new Promise(function (resolve, reject) { var gen = fn.apply(self, args); function _next(value) { asyncGeneratorStep(gen, resolve, reject, _next, _throw, "next", value); } function _throw(err) { asyncGeneratorStep(gen, resolve, reject, _next, _throw, "throw", err); } _next(undefined); }); }; }
 
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+function _defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } }
+
+function _createClass(Constructor, protoProps, staticProps) { if (protoProps) _defineProperties(Constructor.prototype, protoProps); if (staticProps) _defineProperties(Constructor, staticProps); return Constructor; }
+
 function _typeof(obj) { "@babel/helpers - typeof"; if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
+
+var undefinedVar;
+
+var UNDEFINED_TYPE = _typeof(undefinedVar);
+
+var KountSDKVersion = '1.1.3';
+exports.KountSDKVersion = KountSDKVersion;
+
+var ServerConfig = /*#__PURE__*/function () {
+  function ServerConfig(ttlms, collect) {
+    _classCallCheck(this, ServerConfig);
+
+    if (typeof ttlms !== "number") {
+      throw "ttlms is not number: ".concat(_typeof(ttlms));
+    }
+
+    if (typeof collect !== "boolean") {
+      throw "collect is not boolean: ".concat(_typeof(collect));
+    }
+
+    this.ttlms = ttlms;
+    this.collect = collect;
+  }
+
+  _createClass(ServerConfig, null, [{
+    key: "createDefaultServerConfig",
+    value: function createDefaultServerConfig() {
+      return new ServerConfig(900000, true);
+    }
+  }]);
+
+  return ServerConfig;
+}();
 
 function kountSDK(config, sessionID) {
   var sdk = {
-    KountSDKVersion: '1.0.4',
-    collectionInterval: 15,
+    KountSDKVersion: KountSDKVersion,
     kountClientID: null,
     isSinglePageApp: false,
     collectorURL: null,
     sessionID: null,
-    csCookie: 'clientside-cookie',
-    csLocal: 'clientside-local',
-    csId: 'kountCookie',
+    //FPCV = FIRST PARTY COOKIE VALUE
+    FPCV_COOKIE_NAME: 'clientside-cookie',
+    FPCV_LOCAL_STORAGE_KEY: 'clientside-local',
+    FPCV_SESSION_STORAGE_KEY: 'kountCookie',
+    SESSION_STORAGE_KEY_SESSION_ID: 'KountSessionID',
     collectBehaviorData: false,
-    collectDeviceData: true,
-    collectorLastRan: null,
+    collectionCompleteTimeout: 5000,
+    callbacks: {},
+    isCompleted: false,
+    error: [],
+    isDebugEnabled: false,
     LOG_PREFIX: 'k:',
+    serverConfig: null,
+    orchestrateTimeoutId: null,
+    updateSDKServerConfigTimeoutInMS: 3000,
+    orchestrateSemaphoreLocked: false,
     start: function start(config, sessionID) {
-      //config
+      // config
       if (typeof config === 'undefined') {
-        console.error(this.LOG_PREFIX + "SDK Disabled: config required.");
-        return false;
-      } //config-clientID
+        if (window.console && window.console.log) {
+          console.log("".concat(this.LOG_PREFIX, "SDK Disabled: config required."));
+        }
 
-
-      var configuredClientID = config.clientID;
-
-      if (typeof configuredClientID === 'undefined' || configuredClientID.length == 0) {
-        console.error(this.LOG_PREFIX + "SDK Disabled: clientID required.");
         return false;
       }
 
-      this.kountClientID = configuredClientID; //console.log(this.LOG_PREFIX + 'clientID=' + this.kountClientID);
-      //config-hostname
+      this.isDebugEnabled = typeof config.isDebugEnabled !== 'undefined' && typeof config.isDebugEnabled === 'boolean' && config.isDebugEnabled;
+      this.log("SDK isDebugEnabled=".concat(this.isDebugEnabled));
+      this.log('SDK starting...'); // config-clientID
+
+      var configuredClientID = config.clientID;
+
+      if (typeof configuredClientID === 'undefined' || configuredClientID.length === 0) {
+        this.log('SDK Disabled: clientID required.');
+        return false;
+      }
+
+      this.kountClientID = configuredClientID; // this.log(this.LOG_PREFIX + 'clientID=' + this.kountClientID);
+
+      if (typeof config.callbacks !== 'undefined') {
+        this.callbacks = config.callbacks;
+      } // config-hostname
+
 
       var configuredHostname = config.hostname;
 
       if (typeof configuredHostname === 'undefined' || !this.isHostnameValid(configuredHostname)) {
-        console.error(this.LOG_PREFIX + "SDK Disabled: invalid hostname:" + configuredHostname);
+        this.log("SDK Disabled: invalid hostname:".concat(configuredHostname));
         return false;
       }
 
-      this.collectorURL = 'https://' + configuredHostname + '/';
-      console.log(this.LOG_PREFIX + 'collectorURL=' + this.collectorURL); //config-spa
+      this.collectorURL = "https://".concat(configuredHostname);
+      this.log("collectorURL=".concat(this.collectorURL)); // config-spa
 
       var configuredIsSPA = config.isSinglePageApp;
 
       if (typeof configuredIsSPA === 'undefined' || configuredIsSPA !== true && configuredIsSPA !== false) {
-        console.error(this.LOG_PREFIX + "SDK Disabled: invalid isSinglePageApp:" + configuredIsSPA);
+        this.log("SDK Disabled: invalid isSinglePageApp:".concat(configuredIsSPA));
         return false;
       }
 
       this.isSinglePageApp = configuredIsSPA;
-      console.log(this.LOG_PREFIX + 'isSinglePageApp=' + this.isSinglePageApp); //sessionID
+      this.log("isSinglePageApp=".concat(this.isSinglePageApp)); // sessionID
 
-      if (typeof sessionID === 'undefined' || sessionID.length == 0) {
-        console.error(this.LOG_PREFIX + "SDK Disabled: sessionID required.");
+      if (typeof sessionID === 'undefined' || sessionID.length === 0) {
+        this.log('SDK Disabled: sessionID required.');
         return false;
       }
 
-      this.sessionID = sessionID; //console.log(this.LOG_PREFIX + 'sessionID=' + this.sessionID);
+      this.sessionID = sessionID; // this.log(this.LOG_PREFIX + 'sessionID=' + this.sessionID);
 
-      console.log(this.LOG_PREFIX + 'SDK Enabled.');
-      console.log(this.LOG_PREFIX + "SDK Version=".concat(this.KountSDKVersion));
-      console.log(this.LOG_PREFIX + 'SDK Starting...');
-      this.updateFromSession();
-      console.log(this.LOG_PREFIX + 'SDK ready.');
+      this._communicateLatestSessionData();
+
+      this._orchestrate();
+
+      this.log("SDK Version=".concat(this.KountSDKVersion));
+      this.log('SDK started.');
       return true;
     },
+    _orchestrate: function () {
+      var _orchestrate2 = _asyncToGenerator( /*#__PURE__*/regeneratorRuntime.mark(function _callee() {
+        var functionName, thisFunctionOwnsSemaphoreLock, msg, msUntilNextOrchestrate;
+        return regeneratorRuntime.wrap(function _callee$(_context) {
+          while (1) {
+            switch (_context.prev = _context.next) {
+              case 0:
+                functionName = "_orchestrate";
+                thisFunctionOwnsSemaphoreLock = false;
+                _context.prev = 2;
+
+                if (!this.orchestrateSemaphoreLocked) {
+                  _context.next = 6;
+                  break;
+                }
+
+                this.log("".concat(functionName, " gated by semaphore. Skipping..."));
+                return _context.abrupt("return");
+
+              case 6:
+                this.orchestrateSemaphoreLocked = true;
+                thisFunctionOwnsSemaphoreLock = true;
+                this.log("".concat(functionName, " start..."));
+                _context.next = 11;
+                return this._updateSDKServerConfig();
+
+              case 11:
+                if (this.serverConfig.collect) {
+                  this.log("".concat(functionName, " runCollector start..."));
+                  this.runCollector();
+                  this.log("".concat(functionName, " runCollector end..."));
+                } else {
+                  this.log("".concat(functionName, " runCollector skipped..."));
+                }
+
+                _context.next = 19;
+                break;
+
+              case 14:
+                _context.prev = 14;
+                _context.t0 = _context["catch"](2);
+                msg = "".concat(functionName, " unexpected error: ").concat(_context.t0);
+                this.log(msg);
+                this.addError(msg);
+
+              case 19:
+                _context.prev = 19;
+
+                if (thisFunctionOwnsSemaphoreLock) {
+                  _context.next = 22;
+                  break;
+                }
+
+                return _context.abrupt("return");
+
+              case 22:
+                clearTimeout(this.orchestrateTimeoutId);
+                this.log("".concat(functionName, " config:").concat(JSON.stringify(this.serverConfig)));
+                msUntilNextOrchestrate = this.serverConfig.ttlms;
+                this.orchestrateTimeoutId = setTimeout(this._orchestrate.bind(this), msUntilNextOrchestrate);
+                this.log("".concat(functionName, " scheduled for ").concat(msUntilNextOrchestrate, " ms"));
+                this.log("".concat(functionName, " end..."));
+                this.orchestrateSemaphoreLocked = false;
+                return _context.finish(19);
+
+              case 30:
+              case "end":
+                return _context.stop();
+            }
+          }
+        }, _callee, this, [[2, 14, 19, 30]]);
+      }));
+
+      function _orchestrate() {
+        return _orchestrate2.apply(this, arguments);
+      }
+
+      return _orchestrate;
+    }(),
+    //Wraps a promise so that the promise will reject if the promise is not resolved within a certain number of ms.
+    _wrapPromiseInTimeout: function _wrapPromiseInTimeout(msUntilTimeout, promise) {
+      return new Promise(function (resolve, reject) {
+        var timer = setTimeout(function () {
+          reject(new Error("Timeout after ".concat(msUntilTimeout, "ms.")));
+        }, msUntilTimeout);
+        promise.then(function (value) {
+          clearTimeout(timer);
+          resolve(value);
+        }).catch(function (reason) {
+          clearTimeout(timer);
+          reject(reason);
+        });
+      });
+    },
+    _updateSDKServerConfig: function _updateSDKServerConfig() {
+      var _this = this;
+
+      return _asyncToGenerator( /*#__PURE__*/regeneratorRuntime.mark(function _callee2() {
+        var functionName, url, response, msg, jsonConfig, _msg, _msg2;
+
+        return regeneratorRuntime.wrap(function _callee2$(_context2) {
+          while (1) {
+            switch (_context2.prev = _context2.next) {
+              case 0:
+                functionName = "_updateSDKServerConfig";
+                _context2.prev = 1;
+
+                _this.log("".concat(functionName, " start..."));
+
+                url = "".concat(_this.collectorURL, "/cs/config?m=").concat(_this.kountClientID, "&s=").concat(_this.sessionID, "&sv=").concat(_this.KountSDKVersion);
+                _context2.next = 6;
+                return _this._wrapPromiseInTimeout(_this.updateSDKServerConfigTimeoutInMS, fetch(url));
+
+              case 6:
+                response = _context2.sent;
+
+                if (response.ok) {
+                  _context2.next = 12;
+                  break;
+                }
+
+                msg = "".concat(functionName, " response not ok: ").concat(response.status);
+
+                _this.addError(msg);
+
+                _this.log(msg);
+
+                throw msg;
+
+              case 12:
+                _context2.next = 14;
+                return response.json();
+
+              case 14:
+                jsonConfig = _context2.sent;
+
+                if (!(typeof jsonConfig.ttlms == 'undefined' || typeof jsonConfig.collection == 'undefined' || typeof jsonConfig.collection.collect == 'undefined')) {
+                  _context2.next = 20;
+                  break;
+                }
+
+                _msg = "".concat(functionName, " invalid response JSON:").concat(JSON.stringify(jsonConfig));
+
+                _this.log(_msg);
+
+                _this.addError(_msg);
+
+                throw _msg;
+
+              case 20:
+                _this.serverConfig = new ServerConfig(jsonConfig.ttlms, jsonConfig.collection.collect);
+
+                _this.log("".concat(functionName, " config:").concat(JSON.stringify(_this.serverConfig)));
+
+                _context2.next = 30;
+                break;
+
+              case 24:
+                _context2.prev = 24;
+                _context2.t0 = _context2["catch"](1);
+                _this.serverConfig = ServerConfig.createDefaultServerConfig();
+                _msg2 = "".concat(functionName, " error caught. Defaulted config: ").concat(JSON.stringify(_this.serverConfig), " e:").concat(_context2.t0);
+
+                _this.log(_msg2);
+
+                _this.addError(_msg2);
+
+              case 30:
+                _context2.prev = 30;
+
+                _this.log("".concat(functionName, " end..."));
+
+                return _context2.finish(30);
+
+              case 33:
+              case "end":
+                return _context2.stop();
+            }
+          }
+        }, _callee2, null, [[1, 24, 30, 33]]);
+      }))();
+    },
     isHostnameValid: function isHostnameValid(hostname) {
-      if (typeof hostname != 'string') {
-        console.error(this.LOG_PREFIX + 'Invalid hostname: not a string: ' + _typeof(hostname));
+      if (typeof hostname !== 'string') {
+        this.log("Invalid hostname: not a string: ".concat(_typeof(hostname)));
         return false;
       }
 
-      if (hostname.length == 0) {
-        console.error(this.LOG_PREFIX + 'Invalid hostname: length 0.');
+      if (hostname.length === 0) {
+        this.log('Invalid hostname: length 0.');
         return false;
       }
 
       var regex = /^[a-zA-Z0-9.]*$/g;
 
       if (!regex.test(hostname)) {
-        console.error(this.LOG_PREFIX + 'Invalid hostname:' + hostname);
+        this.log("Invalid hostname:".concat(hostname));
         return false;
       }
 
       return true;
     },
-    updateFromSession: function updateFromSession() {
-      var tempCollectorLastRun = sessionStorage.getItem('KountCollectorLastRun');
-      var tempCollectBehaviorData = sessionStorage.getItem('KountCollectBehaviorData');
-      var tempCollectDeviceData = sessionStorage.getItem('KountCollectDeviceData');
+    _communicateLatestSessionData: function _communicateLatestSessionData() {
+      try {
+        this.log('communicateLatestSessionData running...');
+        var sessionIdInSessionStorage = sessionStorage.getItem(this.SESSION_STORAGE_KEY_SESSION_ID);
 
-      if (tempCollectBehaviorData != null) {
-        this.collectBehaviorData = tempCollectBehaviorData;
+        if (sessionIdInSessionStorage === null) {
+          this.postNewSession(this.sessionID);
+        } else if (sessionIdInSessionStorage !== this.sessionID) {
+          this.postChangeSession(this.sessionID, sessionIdInSessionStorage);
+        }
+
+        sessionStorage.setItem(this.SESSION_STORAGE_KEY_SESSION_ID, this.sessionID);
+      } catch (e) {
+        this.addError("communicateLatestSessionData error:".concat(e));
+      } finally {
+        this.log('communicateLatestSessionData ending...');
       }
-
-      if (tempCollectDeviceData != null) {
-        this.collectDeviceData = tempCollectDeviceData;
-      }
-
-      if (tempCollectorLastRun == null || tempCollectorLastRun < Date.UTC() - 1000 * 60 * this.collectionInterval) {
-        this.collectDeviceData = true;
-        this.collectorLastRan = tempCollectorLastRun;
-      }
-
-      var tempSessionID = sessionStorage.getItem('KountSessionID');
-
-      if (tempSessionID === null) {
-        this.postNewSession(this.sessionID);
-      } else if (tempSessionID !== this.sessionID) {
-        this.postChangeSession(this.sessionID, tempSessionID);
-      }
-
-      sessionStorage.setItem('KountCollectBehaviorData', this.collectBehaviorData);
-      sessionStorage.setItem('KountCollectDeviceData', this.collectDeviceData);
-      sessionStorage.setItem('KountSessionID', this.sessionID);
     },
     postNewSession: function postNewSession(sessionID) {
-      var _this = this;
-
-      return _asyncToGenerator( /*#__PURE__*/regeneratorRuntime.mark(function _callee() {
-        var url, request;
-        return regeneratorRuntime.wrap(function _callee$(_context) {
-          while (1) {
-            switch (_context.prev = _context.next) {
-              case 0:
-                try {
-                  console.log(_this.LOG_PREFIX + 'postNewSession running...');
-                  url = "".concat(_this.collectorURL, "session/").concat(sessionID);
-                  request = new XMLHttpRequest();
-
-                  request.onreadystatechange = function () {
-                    if (request.readyState === XMLHttpRequest.DONE) {
-                      if (request.status === 200 || request.status === 201) {
-                        console.log(_this.LOG_PREFIX + 'postNewSession success.');
-                      } else {
-                        console.log(_this.LOG_PREFIX + "postNewSession unknown response: ".concat(request.status));
-                      }
-                    }
-                  };
-
-                  request.open('POST', url, true);
-                  request.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
-                  request.setRequestHeader('client-id', _this.kountClientID);
-                  request.send();
-                } catch (e) {
-                  console.error(_this.LOG_PREFIX + 'postNewSession error:' + e);
-                }
-
-              case 1:
-              case "end":
-                return _context.stop();
-            }
-          }
-        }, _callee);
-      }))();
-    },
-    postChangeSession: function postChangeSession(sessionID, previousSessionID) {
       var _this2 = this;
 
-      return _asyncToGenerator( /*#__PURE__*/regeneratorRuntime.mark(function _callee2() {
-        var url, request;
-        return regeneratorRuntime.wrap(function _callee2$(_context2) {
-          while (1) {
-            switch (_context2.prev = _context2.next) {
-              case 0:
-                try {
-                  console.log(_this2.LOG_PREFIX + "postChangeSession running: newSession: ".concat(sessionID, " prevSession: ").concat(previousSessionID));
-                  url = "".concat(_this2.collectorURL, "session/").concat(_this2.sessionID, "?previousSessionID=").concat(previousSessionID);
-                  request = new XMLHttpRequest();
-
-                  request.onreadystatechange = function () {
-                    if (request.readyState === XMLHttpRequest.DONE) {
-                      if (request.status === 200 || request.status === 201) {
-                        console.log(_this2.LOG_PREFIX + 'postChangeSession success.');
-                      } else {
-                        console.log(_this2.LOG_PREFIX + "postChangeSession unknown response: ".concat(request.status));
-                      }
-                    }
-                  };
-
-                  request.open('POST', url, true);
-                  request.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
-                  request.setRequestHeader('client-id', _this2.kountClientID);
-                  request.send();
-                } catch (e) {
-                  console.error(_this2.LOG_PREFIX + 'postChangeSession error:' + e);
-                }
-
-              case 1:
-              case "end":
-                return _context2.stop();
-            }
-          }
-        }, _callee2);
-      }))();
-    },
-    getCookieFromLocalStorage: function getCookieFromLocalStorage() {
-      try {
-        console.log(this.LOG_PREFIX + 'getCookieFromLocalStorage running...');
-        var value = localStorage.getItem(this.csLocal);
-
-        if (value == null) {
-          return '';
-        }
-
-        return value;
-      } catch (e) {
-        console.error(this.LOG_PREFIX + 'getCookieFromLocalStorage: error' + e);
-        return '';
-      }
-    },
-    getCookieFromCookie: function getCookieFromCookie() {
-      try {
-        console.log(this.LOG_PREFIX + 'getCookieFromCookie running...');
-        var dc = decodeURIComponent(document.cookie);
-        var cookieList = dc.split(';');
-        var cookieValue = '';
-
-        for (var i = 0; i < cookieList.length; i += 1) {
-          var currentCookie = cookieList[i].trim();
-          var elements = currentCookie.split('=');
-
-          if (elements.length === 2) {
-            if (elements[0] === this.csCookie) {
-              var _elements = _slicedToArray(elements, 2);
-
-              cookieValue = _elements[1];
-              console.log(this.LOG_PREFIX + "getCookieFromCookie: found new first party cookie: ".concat(elements[1]));
-              break;
-            }
-          }
-        }
-
-        if (cookieValue === '') {
-          var regex = /(cdn[.][a-z]+[.][0-9]+[.]ka.ck)/g;
-
-          for (var _i2 = 0; _i2 < cookieList.length; _i2 += 1) {
-            var _currentCookie = cookieList[_i2].trim();
-
-            if (regex.test(_currentCookie) === true) {
-              var _elements2 = _currentCookie.split('=');
-
-              if (_elements2.length === 2) {
-                console.log(this.LOG_PREFIX + "getCookieFromCookie: found old first party cookie: ".concat(_elements2[1]));
-
-                var _elements3 = _slicedToArray(_elements2, 2);
-
-                cookieValue = _elements3[1];
-                this.storeCookieInCookie(cookieValue);
-                break;
-              }
-            }
-          }
-        }
-
-        return cookieValue;
-      } catch (e) {
-        console.error(this.LOG_PREFIX + 'getCookieFromCookie error:' + e);
-        return '';
-      }
-    },
-    storeCookieInLocalStore: function storeCookieInLocalStore(value) {
-      try {
-        console.log(this.LOG_PREFIX + 'storeCookieInLocalStore running...');
-        localStorage.setItem(this.csLocal, value);
-      } catch (e) {
-        console.error(this.LOG_PREFIX + 'storeCookieInLocalStore error:' + e);
-      }
-    },
-    storeCookieInCookie: function storeCookieInCookie(value) {
-      try {
-        console.log(this.LOG_PREFIX + 'storeCookieInCookie running...');
-        var expire = 365;
-        var d = new Date();
-        d.setTime(d.getTime() + expire * 24 * 60 * 60 * 1000);
-        var expires = "expires=".concat(d.toUTCString());
-        var attributes = '; SameSite=None; Secure';
-
-        if (window.location.protocol !== 'https:') {
-          attributes = '; SameSite=Lax';
-        }
-
-        document.cookie = "".concat(this.csCookie, "=").concat(value, ";").concat(expires, ";path=/").concat(attributes);
-      } catch (e) {
-        console.error(this.LOG_PREFIX + 'storeCookieInCookie error:' + e);
-      }
-    },
-    storeCookieInSession: function storeCookieInSession(value) {
-      try {
-        console.log(this.LOG_PREFIX + 'storeCookieInSession running...');
-        sessionStorage.setItem(sdk.csId, value);
-      } catch (e) {
-        console.error(this.LOG_PREFIX + 'storeCookieInSession error:' + e);
-      }
-    },
-    getCSCookie: function getCSCookie() {
-      try {
-        console.log(this.LOG_PREFIX + 'getCSCookie running...');
-        var cookieValue = '';
-        var cookie = this.getCookieFromCookie();
-        var localStore = this.getCookieFromLocalStorage();
-        this.storeCookieInSession('');
-
-        if (cookie === '' && localStore === '') {
-          cookieValue = '';
-        } else if (cookie !== '' && localStore === '') {
-          this.storeCookieInLocalStore(cookie);
-          cookieValue = cookie;
-        } else if (localStore !== '' && cookie === '') {
-          this.storeCookieInCookie(localStore);
-          cookieValue = localStore;
-        } else if (localStore === cookie && localStore !== '' && cookie !== '') {
-          cookieValue = localStore;
-        } else if (localStore !== cookie && localStore !== '' && cookie !== '') {
-          this.storeCookieInCookie(localStore);
-          cookieValue = localStore;
-        }
-
-        if (cookieValue === '') {
-          this.requestFirstParty();
-        } else {
-          this.postFirstParty(cookieValue);
-        }
-      } catch (e) {
-        console.error(this.LOG_PREFIX + 'getCSCookie error:' + e);
-      }
-    },
-    requestFirstParty: function requestFirstParty() {
-      var _this3 = this;
-
       return _asyncToGenerator( /*#__PURE__*/regeneratorRuntime.mark(function _callee3() {
-        var url, response, json;
+        var url;
         return regeneratorRuntime.wrap(function _callee3$(_context3) {
           while (1) {
             switch (_context3.prev = _context3.next) {
               case 0:
-                _context3.prev = 0;
-                console.log(_this3.LOG_PREFIX + 'requestFirstParty running...');
-                url = "".concat(_this3.collectorURL, "cs/generatecookie");
-                url += "?m=".concat(_this3.kountClientID, "&s=").concat(_this3.sessionID, "&sv=").concat(_this3.KountSDKVersion);
-                _context3.next = 6;
-                return fetch(url);
+                try {
+                  _this2.log('postNewSession running...');
 
-              case 6:
-                response = _context3.sent;
-                _context3.next = 9;
-                return response.json();
+                  url = "".concat(_this2.collectorURL, "/session/").concat(sessionID);
 
-              case 9:
-                json = _context3.sent;
-
-                if (json.value.length > 0) {
-                  _this3.storeCookieInCookie(json.value);
-
-                  _this3.storeCookieInLocalStore(json.value);
-
-                  _this3.storeCookieInSession(json.value);
+                  _this2._postToURL(url, 'postNewSession');
+                } catch (e) {
+                  _this2.addError("postNewSession error:".concat(e));
+                } finally {
+                  _this2.log('postNewSession ending...');
                 }
 
-                _context3.next = 16;
-                break;
-
-              case 13:
-                _context3.prev = 13;
-                _context3.t0 = _context3["catch"](0);
-                console.error(_this3.LOG_PREFIX + 'requestFirstParty error:' + _context3.t0);
-
-              case 16:
+              case 1:
               case "end":
                 return _context3.stop();
             }
           }
-        }, _callee3, null, [[0, 13]]);
+        }, _callee3);
       }))();
     },
-    postFirstParty: function postFirstParty(value) {
-      var _this4 = this;
+    postChangeSession: function postChangeSession(sessionID, previousSessionID) {
+      var _this3 = this;
 
       return _asyncToGenerator( /*#__PURE__*/regeneratorRuntime.mark(function _callee4() {
-        var url, payload, request;
+        var url;
         return regeneratorRuntime.wrap(function _callee4$(_context4) {
           while (1) {
             switch (_context4.prev = _context4.next) {
               case 0:
                 try {
-                  console.log(_this4.LOG_PREFIX + 'postFirstParty running...');
-                  url = "".concat(_this4.collectorURL, "cs/storecookie");
-                  payload = "m=".concat(_this4.kountClientID, "&s=").concat(_this4.sessionID, "&sv=").concat(_this4.KountSDKVersion, "&k=").concat(value);
-                  request = new XMLHttpRequest();
+                  _this3.log("postChangeSession running: newSession: ".concat(sessionID, " prevSession: ").concat(previousSessionID));
 
-                  request.onreadystatechange = function () {
-                    if (request.readyState === 4 && request.status === 500) {
-                      console.log(_this4.LOG_PREFIX + 'postFirstParty: invalid cookie');
-                      sdk.requestFirstParty();
-                    }
+                  url = "".concat(_this3.collectorURL, "/session/").concat(_this3.sessionID, "?previousSessionID=").concat(previousSessionID);
 
-                    if (request.readyState === 4 && request.status === 200) {
-                      console.log(_this4.LOG_PREFIX + 'postFirstParty: valid cookie');
-                      sdk.storeCookieInSession(value);
-                    }
-                  };
-
-                  request.open('POST', url, true);
-                  request.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
-                  request.send(payload);
+                  _this3._postToURL(url, 'postChangeSession');
                 } catch (e) {
-                  console.error(_this4.LOG_PREFIX + 'postFirstParty error:' + e);
+                  _this3.addError("postChangeSession error:".concat(e));
+                } finally {
+                  _this3.log('postChangeSession ending...');
                 }
 
               case 1:
@@ -496,95 +488,451 @@ function kountSDK(config, sessionID) {
         }, _callee4);
       }))();
     },
-    createIframe: function createIframe() {
-      try {
-        console.log(this.LOG_PREFIX + 'createIframe running...');
+    _postToURL: function _postToURL(url, calledFromFunc) {
+      var _this4 = this;
 
-        if (this.isSinglePageApp) {
-          var oldIframe = document.getElementById('ibody');
+      return _asyncToGenerator( /*#__PURE__*/regeneratorRuntime.mark(function _callee5() {
+        var request;
+        return regeneratorRuntime.wrap(function _callee5$(_context5) {
+          while (1) {
+            switch (_context5.prev = _context5.next) {
+              case 0:
+                _context5.prev = 0;
 
-          if (oldIframe !== null) {
-            oldIframe.remove();
+                _this4.log("_postToURL:".concat(calledFromFunc, " running..."));
+
+                request = new XMLHttpRequest();
+
+                request.onreadystatechange = function () {
+                  if (request.readyState === XMLHttpRequest.DONE) {
+                    if (request.status === 200 || request.status === 201) {
+                      _this4.log("".concat(calledFromFunc, " success."));
+                    } else {
+                      _this4.addError("".concat(calledFromFunc, " unknown response: ").concat(request.status));
+
+                      _this4.log("".concat(_this4.error, ":unknown response - ").concat(request.status));
+                    }
+                  }
+                };
+
+                request.open('POST', url, true);
+                request.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
+                request.setRequestHeader('client-id', _this4.kountClientID);
+                request.send();
+                _context5.next = 13;
+                break;
+
+              case 10:
+                _context5.prev = 10;
+                _context5.t0 = _context5["catch"](0);
+                throw _context5.t0;
+
+              case 13:
+                _context5.prev = 13;
+
+                _this4.log("_postToURL:".concat(calledFromFunc, " ending..."));
+
+                return _context5.finish(13);
+
+              case 16:
+              case "end":
+                return _context5.stop();
+            }
           }
+        }, _callee5, null, [[0, 10, 13, 16]]);
+      }))();
+    },
+    getFPCVFromLocalStorage: function getFPCVFromLocalStorage() {
+      try {
+        this.log('getFPCVFromLocalStorage running...');
+        var value = localStorage.getItem(this.FPCV_LOCAL_STORAGE_KEY);
+
+        if (value == null) {
+          return '';
+        }
+
+        return value;
+      } catch (e) {
+        this.addError("getFPCVFromLocalStorage: error".concat(e));
+        return '';
+      }
+    },
+    getFPCVFromCookie: function getFPCVFromCookie() {
+      try {
+        this.log('getFPCVFromCookie running...');
+        var dc = decodeURIComponent(document.cookie);
+        var cookieList = dc.split(';');
+        var cookieValue = '';
+
+        for (var i = 0; i < cookieList.length; i++) {
+          var currentCookie = cookieList[i].trim();
+          var elements = currentCookie.split('=');
+
+          if (elements.length === 2) {
+            if (elements[0] === this.FPCV_COOKIE_NAME) {
+              var _elements = _slicedToArray(elements, 2);
+
+              cookieValue = _elements[1];
+              this.log("getFPCVFromCookie: found new first party cookie: ".concat(cookieValue));
+              break;
+            }
+          }
+        }
+
+        if (cookieValue === '') {
+          var regex = /(cdn[.][a-z]+[.][0-9]+[.]ka.ck)/g;
+
+          for (var _i2 = 0; _i2 < cookieList.length; _i2++) {
+            var _currentCookie = cookieList[_i2].trim();
+
+            if (regex.test(_currentCookie) === true) {
+              var _elements2 = _currentCookie.split('=');
+
+              if (_elements2.length === 2) {
+                var _elements3 = _slicedToArray(_elements2, 2);
+
+                cookieValue = _elements3[1];
+                this.log("getFPCVFromCookie: found old first party cookie: ".concat(cookieValue));
+                this.storeFPCVInCookie(cookieValue);
+                break;
+              }
+            }
+          }
+        }
+
+        return cookieValue;
+      } catch (e) {
+        this.addError("getFPCVFromCookie error:".concat(e));
+        return '';
+      }
+    },
+    storeFPCVInLocalStore: function storeFPCVInLocalStore(value) {
+      try {
+        this.log('storeFPCVInLocalStore running...');
+        localStorage.setItem(this.FPCV_LOCAL_STORAGE_KEY, value);
+      } catch (e) {
+        this.addError("storeFPCVInLocalStore error:".concat(e));
+      } finally {
+        this.log('storeFPCVInLocalStore ending...');
+      }
+    },
+    storeFPCVInCookie: function storeFPCVInCookie(value) {
+      try {
+        this.log('storeFPCVInCookie running...');
+        var expire = 365;
+        var d = new Date();
+        d.setTime(d.getTime() + expire * 24 * 60 * 60 * 1000);
+        var expires = "expires=".concat(d.toUTCString());
+        var attributes = '; SameSite=None; Secure';
+
+        if (window.location.protocol !== 'https:') {
+          attributes = '; SameSite=Lax';
+        }
+
+        document.cookie = "".concat(this.FPCV_COOKIE_NAME, "=").concat(value, ";").concat(expires, ";path=/").concat(attributes);
+      } catch (e) {
+        this.addError("storeFPCVInCookie error:".concat(e));
+      } finally {
+        this.log('storeFPCVInCookie ending...');
+      }
+    },
+    storeFPCVInSession: function storeFPCVInSession(value) {
+      try {
+        this.log('storeFPCVInSession running...');
+        sessionStorage.setItem(sdk.FPCV_SESSION_STORAGE_KEY, value);
+      } catch (e) {
+        this.addError("storeFPCVInSession error:".concat(e));
+      }
+    },
+    coordinateFirstPartyCookieValues: function coordinateFirstPartyCookieValues() {
+      this.log('coordinateFirstPartyCookieValues running...');
+      var deducedFPCV = '';
+      var fpcvFromCookie = this.getFPCVFromCookie();
+      var fpcvFromLocalStorage = this.getFPCVFromLocalStorage();
+      this.storeFPCVInSession('');
+
+      if (fpcvFromCookie === '' && fpcvFromLocalStorage === '') {
+        deducedFPCV = '';
+      } else if (fpcvFromCookie !== '' && fpcvFromLocalStorage === '') {
+        this.storeFPCVInLocalStore(fpcvFromCookie);
+        deducedFPCV = fpcvFromCookie;
+      } else if (fpcvFromLocalStorage !== '' && fpcvFromCookie === '') {
+        this.storeFPCVInCookie(fpcvFromLocalStorage);
+        deducedFPCV = fpcvFromLocalStorage;
+      } else if (fpcvFromLocalStorage === fpcvFromCookie && fpcvFromLocalStorage !== '' && fpcvFromCookie !== '') {
+        deducedFPCV = fpcvFromLocalStorage;
+      } else if (fpcvFromLocalStorage !== fpcvFromCookie && fpcvFromLocalStorage !== '' && fpcvFromCookie !== '') {
+        this.storeFPCVInCookie(fpcvFromLocalStorage);
+        deducedFPCV = fpcvFromLocalStorage;
+      }
+
+      if (deducedFPCV === '') {
+        this.establishNewFPCV();
+      } else {
+        this.communicateExistingFPCV(deducedFPCV);
+      }
+    },
+    establishNewFPCV: function establishNewFPCV() {
+      var _this5 = this;
+
+      return _asyncToGenerator( /*#__PURE__*/regeneratorRuntime.mark(function _callee6() {
+        var url, response, json, firstPartyCookieValue;
+        return regeneratorRuntime.wrap(function _callee6$(_context6) {
+          while (1) {
+            switch (_context6.prev = _context6.next) {
+              case 0:
+                _context6.prev = 0;
+
+                _this5.log('establishNewFPCV running...');
+
+                url = "".concat(_this5.collectorURL, "/cs/generatecookie?m=").concat(_this5.kountClientID, "&s=").concat(_this5.sessionID, "&sv=").concat(_this5.KountSDKVersion);
+                _context6.next = 5;
+                return fetch(url);
+
+              case 5:
+                response = _context6.sent;
+                _context6.next = 8;
+                return response.json();
+
+              case 8:
+                json = _context6.sent;
+
+                if (json.value.length > 0) {
+                  firstPartyCookieValue = json.value;
+
+                  _this5.storeFPCVInCookie(firstPartyCookieValue);
+
+                  _this5.storeFPCVInLocalStore(firstPartyCookieValue);
+
+                  _this5.storeFPCVInSession(firstPartyCookieValue);
+                }
+
+                _context6.next = 15;
+                break;
+
+              case 12:
+                _context6.prev = 12;
+                _context6.t0 = _context6["catch"](0);
+
+                _this5.addError("establishNewFPCV error:".concat(_context6.t0));
+
+              case 15:
+                _context6.prev = 15;
+
+                _this5.log('establishNewFPCV ending...');
+
+                return _context6.finish(15);
+
+              case 18:
+              case "end":
+                return _context6.stop();
+            }
+          }
+        }, _callee6, null, [[0, 12, 15, 18]]);
+      }))();
+    },
+    communicateExistingFPCV: function communicateExistingFPCV(value) {
+      var _this6 = this;
+
+      return _asyncToGenerator( /*#__PURE__*/regeneratorRuntime.mark(function _callee7() {
+        var url, payload, request;
+        return regeneratorRuntime.wrap(function _callee7$(_context7) {
+          while (1) {
+            switch (_context7.prev = _context7.next) {
+              case 0:
+                try {
+                  _this6.log('communicateExistingFPCV running...');
+
+                  url = "".concat(_this6.collectorURL, "/cs/storecookie");
+                  payload = "m=".concat(_this6.kountClientID, "&s=").concat(_this6.sessionID, "&sv=").concat(_this6.KountSDKVersion, "&k=").concat(value);
+                  request = new XMLHttpRequest();
+
+                  request.onreadystatechange = function () {
+                    if (request.readyState === 4 && request.status === 500) {
+                      _this6.log('communicateExistingFPCV: invalid cookie');
+
+                      sdk.establishNewFPCV();
+                    }
+
+                    if (request.readyState === 4 && request.status === 200) {
+                      _this6.log('communicateExistingFPCV: valid cookie');
+
+                      sdk.storeFPCVInSession(value);
+                    }
+                  };
+
+                  request.open('POST', url, true);
+                  request.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
+                  request.send(payload);
+                } catch (e) {
+                  _this6.addError("communicateExistingFPCV error:".concat(e));
+                }
+
+              case 1:
+              case "end":
+                return _context7.stop();
+            }
+          }
+        }, _callee7);
+      }))();
+    },
+    _createIframe: function _createIframe() {
+      var _this7 = this;
+
+      var functionName = "_createIframe";
+
+      try {
+        this.log("".concat(functionName, " running..."));
+        var iframeId = 'ibody';
+        var priorIframe = document.getElementById(iframeId);
+
+        if (priorIframe !== null) {
+          priorIframe.remove();
         }
 
         var queryString = "m=".concat(this.kountClientID, "&s=").concat(this.sessionID, "&sv=").concat(this.KountSDKVersion);
         var iframe = document.createElement('iframe');
-        iframe.id = 'ibody';
+        iframe.id = iframeId;
         iframe.style.border = '0px';
         iframe.style.height = '1px';
         iframe.style.width = '1px';
         iframe.style.position = 'absolute';
-        iframe.src = "".concat(this.collectorURL, "logo.htm?").concat(queryString);
+        iframe.src = "".concat(this.collectorURL, "/logo.htm?").concat(queryString);
         document.getElementsByTagName('body')[0].appendChild(iframe);
+
+        if (typeof this.callbacks !== 'undefined') {
+          this.callback('collect-begin', {
+            SessionID: this.sessionID,
+            KountClientID: this.kountClientID
+          });
+        }
+
+        if (window.postMessage !== 'undefined' && window.onmessage !== 'undefined') {
+          window.onmessage = function (event) {
+            var data = null;
+
+            if (event.origin === _this7.collectorURL) {
+              if (JSON) {
+                data = JSON.parse(event.data);
+              } else {
+                data = eval(event.data);
+              }
+
+              if (!_this7.isSinglePageApp) {
+                if (data.event === 'collect-end') {
+                  _this7.detach(window, 'unload', _this7.unloadHandler);
+                }
+              }
+
+              var params = {};
+              Object.keys(data.params).forEach(function (index) {
+                if (Object.prototype.hasOwnProperty.call(data.params, index)) {
+                  switch (index) {
+                    case 's':
+                      params.SessionID = data.params[index];
+                      break;
+
+                    case 'm':
+                      params.KountClientID = data.params[index];
+                      break;
+
+                    default:
+                      params[index] = data.params[index];
+                  }
+                }
+              });
+              _this7.isCompleted = true;
+
+              _this7.callback(data.event, params);
+            }
+          };
+
+          if (!this.isSinglePageApp) {
+            this.attach(window, 'unload', this.unloadHandler);
+          }
+        } else {
+          window.setTimeout(function () {
+            _this7.isCompleted = true;
+
+            _this7.callback('collect-end', {
+              SessionID: _this7.sessionID,
+              KountClientID: _this7.kountClientID
+            });
+          }, 3000);
+        }
       } catch (e) {
-        console.error(this.LOG_PREFIX + 'createIframe error:' + e);
+        this.addError("".concat(functionName, " error:").concat(e));
+      } finally {
+        this.log("".concat(functionName, " ending..."));
       }
     },
     runCollector: function runCollector() {
-      var _this5 = this;
+      var _this8 = this;
+
+      var functionName = "runCollector";
 
       try {
-        console.log(this.LOG_PREFIX + 'runCollector running...');
-        this.getCSCookie();
-        var timeout = 2000;
-        var intervalBetweenChecks = 10;
+        this.log("".concat(functionName, " running..."));
+        this.isCompleted = false;
+        setTimeout(function () {
+          _this8.isCompleted = true;
+        }, this.collectionCompleteTimeout);
+        this.coordinateFirstPartyCookieValues();
 
-        var waitForFirstParty = function waitForFirstParty(timeoutms) {
+        var waitForFirstParty = function waitForFirstParty(timeoutInMS, intervalBetweenChecksInMS) {
           return new Promise(function (resolve, reject) {
             var checkForFirstParty = function checkForFirstParty() {
-              if (sessionStorage.getItem(_this5.csId) !== '') {
-                _this5.createIframe();
+              if (sessionStorage.getItem(_this8.FPCV_SESSION_STORAGE_KEY) !== '') {
+                _this8._createIframe();
 
-                sessionStorage.setItem('KountCollectorLastRun', new Date().toUTCString());
-                _this5.collectDeviceData = false;
-                sessionStorage.setItem('KountCollectDeviceData', _this5.collectDeviceData);
                 resolve();
-              } else if ((timeoutms -= intervalBetweenChecks) < 0) {
+              } else if ((timeoutInMS -= intervalBetweenChecksInMS) < 0) {
                 reject();
               } else {
-                setTimeout(checkForFirstParty, intervalBetweenChecks);
+                setTimeout(checkForFirstParty, intervalBetweenChecksInMS);
               }
             };
 
-            setTimeout(checkForFirstParty, intervalBetweenChecks);
+            setTimeout(checkForFirstParty, intervalBetweenChecksInMS);
           });
         };
 
-        _asyncToGenerator( /*#__PURE__*/regeneratorRuntime.mark(function _callee5() {
-          return regeneratorRuntime.wrap(function _callee5$(_context5) {
+        _asyncToGenerator( /*#__PURE__*/regeneratorRuntime.mark(function _callee8() {
+          return regeneratorRuntime.wrap(function _callee8$(_context8) {
             while (1) {
-              switch (_context5.prev = _context5.next) {
+              switch (_context8.prev = _context8.next) {
                 case 0:
-                  waitForFirstParty(timeout).then(function () {
-                    return console.log(_this5.LOG_PREFIX + 'runCollector: Collection Initiated');
+                  waitForFirstParty(2000, 10).then(function () {
+                    return _this8.log("".concat(functionName, ": Collection Initiated"));
                   }).catch(function () {
-                    return console.error(_this5.LOG_PREFIX + 'runCollector: Invalid/Missing First Party cookie');
+                    return _this8.log("".concat(functionName, ": Invalid/Missing First Party cookie"));
                   });
 
                 case 1:
                 case "end":
-                  return _context5.stop();
+                  return _context8.stop();
               }
             }
-          }, _callee5);
+          }, _callee8);
         }))();
       } catch (e) {
-        console.error(this.LOG_PREFIX + 'runCollector error:' + e);
+        this.addError("".concat(functionName, " error:").concat(e));
+      } finally {
+        this.log("".concat(functionName, " ending..."));
       }
     },
     AttachToForm: function AttachToForm(formID) {
       var options = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : new Map();
-      console.log(this.LOG_PREFIX + 'AttachToForm running...');
+      this.log('AttachToForm running...');
       var decisionPointField = 'kountDecisionPointUUID';
 
       if (this.collectBehaviorData) {}
 
-      console.log(this.LOG_PREFIX + 'AttachToForm: Attaching to form...');
+      this.log('AttachToForm: Attaching to form...');
       var form = document.getElementById(formID);
 
       if (options != null && options.has('CustomFieldName') && options.get('CustomFieldName').length > 0) {
-        console.log(this.LOG_PREFIX + "AttachToForm: Overriding decisionPointField name to: ".concat(options.get('CustomFieldName')));
+        this.log("AttachToForm: Overriding decisionPointField name to: ".concat(options.get('CustomFieldName')));
         decisionPointField = options.get('CustomFieldName');
       }
 
@@ -595,43 +943,147 @@ function kountSDK(config, sessionID) {
           hiddenField.setAttribute('name', decisionPointField);
           hiddenField.setAttribute('value', this.sessionID);
           form.appendChild(hiddenField);
-          console.log(this.LOG_PREFIX + "AttachToForm: Field ".concat(decisionPointField, " NOT found.                     Created and attached to form with value: ").concat(this.sessionID));
+          this.log("AttachToForm: Field ".concat(decisionPointField, " NOT found.                     Created and attached to form with value: ").concat(this.sessionID));
         } else {
-          console.log(this.LOG_PREFIX + "AttachToForm: Field ".concat(decisionPointField, " found, setting value to: ").concat(this.sessionID));
+          this.log("AttachToForm: Field ".concat(decisionPointField, " found, setting value to: ").concat(this.sessionID));
           form[decisionPointField].setAttribute('value', this.sessionID);
         }
 
-        console.log(this.LOG_PREFIX + "AttachToForm: Attached to form successfully using ".concat(this.sessionID, "                 value in ").concat(decisionPointField, " hidden field."));
-
-        if (this.collectDeviceData === true) {
-          this.runCollector();
-        }
+        this.log("AttachToForm: Attached to form successfully using ".concat(this.sessionID, "                 value in ").concat(decisionPointField, " hidden field."));
       } else {
-        console.error(this.LOG_PREFIX + "AttachToForm: FormID: ".concat(formID, " is not valid. Skipping attachment to form and collection."));
+        this.addError("AttachToForm: FormID: ".concat(formID, " is not valid. Skipping attachment to form and collection."));
       }
     },
     NewSession: function NewSession(sessionID) {
       if (typeof sessionID === 'undefined') {
-        console.error(this.LOG_PREFIX + "NewSession: Invalid sessionID.  You must set the 'sessionID' for collection. Disabling Kount SDK");
+        this.addError("NewSession: Invalid sessionID.  You must set the 'sessionID' for collection. Disabling Kount SDK");
       } else {
-        console.log(this.LOG_PREFIX + "NewSession: SessionID set to: ".concat(sessionID));
+        this.log("NewSession: SessionID set to: ".concat(sessionID));
         sessionStorage.clear();
         this.sessionID = sessionID;
-        this.updateFromSession();
-        this.runCollector();
+
+        this._communicateLatestSessionData();
+
+        this._orchestrate();
       }
-    }
+    },
+    IsCompleted: function IsCompleted() {
+      return this.isCompleted;
+    },
+    log: function log(message) {
+      if (this.isDebugEnabled && window.console && window.console.debug) {
+        console.debug("".concat(this.LOG_PREFIX).concat(message));
+      }
+    },
+    addError: function addError(error) {
+      this.error.push(error);
+      this.log(error);
+    },
+    callback: function callback(event, params) {
+      if (typeof this.callbacks[event] !== 'undefined') {
+        var theCallback = this.callbacks[event];
+        this.callbacks[event] = UNDEFINED_TYPE;
+        theCallback(params);
+      }
+    },
+    unloadHandler: function unloadHandler(event) {
+      var endpoint = 'fin';
+      var formData = {
+        n: 'collect-end',
+        com: 'false',
+        et: 0,
+        s: this.sessionID,
+        m: this.kountClientID
+      };
+
+      try {
+        var http = this.getXMLHttpRequest(endpoint, 'POST');
+        http.send(formData);
+      } catch (e) {}
+    },
+    getXMLHttpRequest: function getXMLHttpRequest(endpoint, method) {
+      var http = null;
+      var esc = encodeURIComponent || escape;
+      var url = "".concat(this.collectorURL, "/").concat(endpoint);
+
+      if (window.XMLHttpRequest) {
+        try {
+          http = new window.XMLHttpRequest();
+        } catch (e) {}
+
+        if ('withCredentials' in http) {
+          http.open(method, url, false);
+        } else if (typeof window.XDomainRequest !== 'undefined') {
+          http = new window.XDomainRequest();
+          http.open(method, url);
+        } else {
+          http = null;
+        }
+      } else {
+        http = null;
+      }
+
+      return {
+        send: function send(data) {
+          if (!http) {
+            return;
+          }
+
+          http.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+          var payload = '';
+          Object.keys(data).forEach(function (key) {
+            if (Object.prototype.hasOwnProperty.call(data, key)) {
+              payload += "&".concat(esc(key), "=").concat(esc(data[key]));
+            }
+          });
+          payload = payload.substring(1);
+          http.send(payload);
+        }
+      };
+    },
+    attach: function attachFunc() {
+      if (typeof document.addEventListener !== 'undefined') {
+        return function addEventListenerFunc(element, event, callback) {
+          element.addEventListener(event, callback, false);
+        };
+      }
+
+      if (typeof document.attachEvent !== 'undefined') {
+        return function attachEventFunc(element, event, callback) {
+          element.attachEvent("on".concat(event), callback);
+        };
+      }
+
+      return function noOpFunc(element, event, callback) {};
+    }(),
+    detach: function detachFunc() {
+      if (typeof document.removeEventListener !== 'undefined') {
+        return function removeEventListenerFunc(element, event, listener) {
+          element.removeEventListener(event, listener, false);
+        };
+      }
+
+      if (typeof document.detachEvent !== 'undefined') {
+        return function detachEventFunc(element, event, listener) {
+          element.detach("on".concat(event), listener);
+        };
+      }
+
+      return function noOpFunc(element, event, listener) {};
+    }()
   };
 
-  if (sdk.start(config, sessionID)) {
-    sdk.runCollector();
-    return sdk;
+  try {
+    if (sdk.start(config, sessionID)) {
+      return sdk;
+    }
+  } catch (e) {//Elevate sdk log method?
   }
 
   return null;
 }
 
-},{"core-js/modules/es.array.concat.js":143,"core-js/modules/es.array.iterator.js":146,"core-js/modules/es.map.js":153,"core-js/modules/es.object.to-string.js":157,"core-js/modules/es.promise.js":158,"core-js/modules/es.regexp.exec.js":159,"core-js/modules/es.string.iterator.js":161,"core-js/modules/es.string.split.js":163,"core-js/modules/es.string.trim.js":164,"core-js/modules/es.symbol.description.js":166,"core-js/modules/es.symbol.iterator.js":167,"core-js/modules/es.symbol.js":168,"core-js/modules/esnext.map.delete-all.js":195,"core-js/modules/esnext.map.every.js":196,"core-js/modules/esnext.map.filter.js":197,"core-js/modules/esnext.map.find-key.js":198,"core-js/modules/esnext.map.find.js":199,"core-js/modules/esnext.map.includes.js":200,"core-js/modules/esnext.map.key-of.js":201,"core-js/modules/esnext.map.map-keys.js":202,"core-js/modules/esnext.map.map-values.js":203,"core-js/modules/esnext.map.merge.js":204,"core-js/modules/esnext.map.reduce.js":205,"core-js/modules/esnext.map.some.js":206,"core-js/modules/esnext.map.update.js":207,"core-js/modules/web.dom-collections.iterator.js":209,"regenerator-runtime/runtime.js":213}],2:[function(require,module,exports){
+},{"core-js/modules/es.array.concat.js":143,"core-js/modules/es.array.for-each.js":144,"core-js/modules/es.array.iterator.js":146,"core-js/modules/es.map.js":153,"core-js/modules/es.object.keys.js":157,"core-js/modules/es.object.to-string.js":158,"core-js/modules/es.promise.js":159,"core-js/modules/es.regexp.exec.js":160,"core-js/modules/es.string.iterator.js":162,"core-js/modules/es.string.split.js":164,"core-js/modules/es.string.trim.js":165,"core-js/modules/es.symbol.description.js":167,"core-js/modules/es.symbol.iterator.js":168,"core-js/modules/es.symbol.js":169,"core-js/modules/esnext.map.delete-all.js":196,"core-js/modules/esnext.map.every.js":197,"core-js/modules/esnext.map.filter.js":198,"core-js/modules/esnext.map.find-key.js":199,"core-js/modules/esnext.map.find.js":200,"core-js/modules/esnext.map.includes.js":201,"core-js/modules/esnext.map.key-of.js":202,"core-js/modules/esnext.map.map-keys.js":203,"core-js/modules/esnext.map.map-values.js":204,"core-js/modules/esnext.map.merge.js":205,"core-js/modules/esnext.map.reduce.js":206,"core-js/modules/esnext.map.some.js":207,"core-js/modules/esnext.map.update.js":208,"core-js/modules/web.dom-collections.for-each.js":209,"core-js/modules/web.dom-collections.iterator.js":210,"regenerator-runtime/runtime.js":214}],2:[function(require,module,exports){
 (function (global){(function (){
 "use strict";
 
@@ -642,7 +1094,7 @@ var sdk = require('./kount-web-client-sdk.mjs');
 global.kountSDK = sdk.default;
 
 }).call(this)}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./kount-web-client-sdk.mjs":1,"isomorphic-fetch":212}],3:[function(require,module,exports){
+},{"./kount-web-client-sdk.mjs":1,"isomorphic-fetch":213}],3:[function(require,module,exports){
 module.exports = function (it) {
   if (typeof it != 'function') {
     throw TypeError(String(it) + ' is not a function');
@@ -2361,7 +2813,7 @@ module.exports = function (KEY, length, exec, sham) {
   if (sham) createNonEnumerableProperty(RegExp.prototype[SYMBOL], 'sham', true);
 };
 
-},{"../internals/create-non-enumerable-property":34,"../internals/fails":49,"../internals/redefine":105,"../internals/regexp-exec":107,"../internals/well-known-symbol":140,"../modules/es.regexp.exec":159}],51:[function(require,module,exports){
+},{"../internals/create-non-enumerable-property":34,"../internals/fails":49,"../internals/redefine":105,"../internals/regexp-exec":107,"../internals/well-known-symbol":140,"../modules/es.regexp.exec":160}],51:[function(require,module,exports){
 var fails = require('../internals/fails');
 
 module.exports = !fails(function () {
@@ -4989,6 +5441,22 @@ $({ target: 'Object', stat: true, forced: FAILS_ON_PRIMITIVES, sham: !CORRECT_PR
 
 
 },{"../internals/correct-prototype-getter":32,"../internals/export":48,"../internals/fails":49,"../internals/object-get-prototype-of":94,"../internals/to-object":129}],157:[function(require,module,exports){
+var $ = require('../internals/export');
+var toObject = require('../internals/to-object');
+var nativeKeys = require('../internals/object-keys');
+var fails = require('../internals/fails');
+
+var FAILS_ON_PRIMITIVES = fails(function () { nativeKeys(1); });
+
+// `Object.keys` method
+// https://tc39.es/ecma262/#sec-object.keys
+$({ target: 'Object', stat: true, forced: FAILS_ON_PRIMITIVES }, {
+  keys: function keys(it) {
+    return nativeKeys(toObject(it));
+  }
+});
+
+},{"../internals/export":48,"../internals/fails":49,"../internals/object-keys":96,"../internals/to-object":129}],158:[function(require,module,exports){
 var TO_STRING_TAG_SUPPORT = require('../internals/to-string-tag-support');
 var redefine = require('../internals/redefine');
 var toString = require('../internals/object-to-string');
@@ -4999,7 +5467,7 @@ if (!TO_STRING_TAG_SUPPORT) {
   redefine(Object.prototype, 'toString', toString, { unsafe: true });
 }
 
-},{"../internals/object-to-string":99,"../internals/redefine":105,"../internals/to-string-tag-support":133}],158:[function(require,module,exports){
+},{"../internals/object-to-string":99,"../internals/redefine":105,"../internals/to-string-tag-support":133}],159:[function(require,module,exports){
 'use strict';
 var $ = require('../internals/export');
 var IS_PURE = require('../internals/is-pure');
@@ -5382,7 +5850,7 @@ $({ target: PROMISE, stat: true, forced: INCORRECT_ITERATION }, {
   }
 });
 
-},{"../internals/a-function":3,"../internals/an-instance":7,"../internals/check-correctness-of-iteration":25,"../internals/engine-is-node":43,"../internals/engine-v8-version":46,"../internals/export":48,"../internals/get-built-in":53,"../internals/global":58,"../internals/host-report-errors":61,"../internals/inspect-source":67,"../internals/internal-state":69,"../internals/is-forced":72,"../internals/is-object":73,"../internals/is-pure":74,"../internals/iterate":76,"../internals/microtask":80,"../internals/native-promise-constructor":81,"../internals/new-promise-capability":85,"../internals/perform":102,"../internals/promise-resolve":103,"../internals/redefine":105,"../internals/redefine-all":104,"../internals/set-species":113,"../internals/set-to-string-tag":114,"../internals/species-constructor":118,"../internals/task":123,"../internals/well-known-symbol":140}],159:[function(require,module,exports){
+},{"../internals/a-function":3,"../internals/an-instance":7,"../internals/check-correctness-of-iteration":25,"../internals/engine-is-node":43,"../internals/engine-v8-version":46,"../internals/export":48,"../internals/get-built-in":53,"../internals/global":58,"../internals/host-report-errors":61,"../internals/inspect-source":67,"../internals/internal-state":69,"../internals/is-forced":72,"../internals/is-object":73,"../internals/is-pure":74,"../internals/iterate":76,"../internals/microtask":80,"../internals/native-promise-constructor":81,"../internals/new-promise-capability":85,"../internals/perform":102,"../internals/promise-resolve":103,"../internals/redefine":105,"../internals/redefine-all":104,"../internals/set-species":113,"../internals/set-to-string-tag":114,"../internals/species-constructor":118,"../internals/task":123,"../internals/well-known-symbol":140}],160:[function(require,module,exports){
 'use strict';
 var $ = require('../internals/export');
 var exec = require('../internals/regexp-exec');
@@ -5393,7 +5861,7 @@ $({ target: 'RegExp', proto: true, forced: /./.exec !== exec }, {
   exec: exec
 });
 
-},{"../internals/export":48,"../internals/regexp-exec":107}],160:[function(require,module,exports){
+},{"../internals/export":48,"../internals/regexp-exec":107}],161:[function(require,module,exports){
 'use strict';
 var redefine = require('../internals/redefine');
 var anObject = require('../internals/an-object');
@@ -5420,7 +5888,7 @@ if (NOT_GENERIC || INCORRECT_NAME) {
   }, { unsafe: true });
 }
 
-},{"../internals/an-object":8,"../internals/fails":49,"../internals/redefine":105,"../internals/regexp-flags":108}],161:[function(require,module,exports){
+},{"../internals/an-object":8,"../internals/fails":49,"../internals/redefine":105,"../internals/regexp-flags":108}],162:[function(require,module,exports){
 'use strict';
 var charAt = require('../internals/string-multibyte').charAt;
 var InternalStateModule = require('../internals/internal-state');
@@ -5451,7 +5919,7 @@ defineIterator(String, 'String', function (iterated) {
   return { value: point, done: false };
 });
 
-},{"../internals/define-iterator":37,"../internals/internal-state":69,"../internals/string-multibyte":119}],162:[function(require,module,exports){
+},{"../internals/define-iterator":37,"../internals/internal-state":69,"../internals/string-multibyte":119}],163:[function(require,module,exports){
 'use strict';
 var fixRegExpWellKnownSymbolLogic = require('../internals/fix-regexp-well-known-symbol-logic');
 var anObject = require('../internals/an-object');
@@ -5551,7 +6019,7 @@ fixRegExpWellKnownSymbolLogic('replace', 2, function (REPLACE, nativeReplace, ma
   ];
 });
 
-},{"../internals/advance-string-index":6,"../internals/an-object":8,"../internals/fix-regexp-well-known-symbol-logic":50,"../internals/get-substitution":57,"../internals/regexp-exec-abstract":106,"../internals/require-object-coercible":110,"../internals/to-integer":127,"../internals/to-length":128}],163:[function(require,module,exports){
+},{"../internals/advance-string-index":6,"../internals/an-object":8,"../internals/fix-regexp-well-known-symbol-logic":50,"../internals/get-substitution":57,"../internals/regexp-exec-abstract":106,"../internals/require-object-coercible":110,"../internals/to-integer":127,"../internals/to-length":128}],164:[function(require,module,exports){
 'use strict';
 var fixRegExpWellKnownSymbolLogic = require('../internals/fix-regexp-well-known-symbol-logic');
 var isRegExp = require('../internals/is-regexp');
@@ -5687,7 +6155,7 @@ fixRegExpWellKnownSymbolLogic('split', 2, function (SPLIT, nativeSplit, maybeCal
   ];
 }, !SUPPORTS_Y);
 
-},{"../internals/advance-string-index":6,"../internals/an-object":8,"../internals/fails":49,"../internals/fix-regexp-well-known-symbol-logic":50,"../internals/is-regexp":75,"../internals/regexp-exec":107,"../internals/regexp-exec-abstract":106,"../internals/require-object-coercible":110,"../internals/species-constructor":118,"../internals/to-length":128}],164:[function(require,module,exports){
+},{"../internals/advance-string-index":6,"../internals/an-object":8,"../internals/fails":49,"../internals/fix-regexp-well-known-symbol-logic":50,"../internals/is-regexp":75,"../internals/regexp-exec":107,"../internals/regexp-exec-abstract":106,"../internals/require-object-coercible":110,"../internals/species-constructor":118,"../internals/to-length":128}],165:[function(require,module,exports){
 'use strict';
 var $ = require('../internals/export');
 var $trim = require('../internals/string-trim').trim;
@@ -5701,14 +6169,14 @@ $({ target: 'String', proto: true, forced: forcedStringTrimMethod('trim') }, {
   }
 });
 
-},{"../internals/export":48,"../internals/string-trim":122,"../internals/string-trim-forced":121}],165:[function(require,module,exports){
+},{"../internals/export":48,"../internals/string-trim":122,"../internals/string-trim-forced":121}],166:[function(require,module,exports){
 var defineWellKnownSymbol = require('../internals/define-well-known-symbol');
 
 // `Symbol.asyncIterator` well-known symbol
 // https://tc39.es/ecma262/#sec-symbol.asynciterator
 defineWellKnownSymbol('asyncIterator');
 
-},{"../internals/define-well-known-symbol":38}],166:[function(require,module,exports){
+},{"../internals/define-well-known-symbol":38}],167:[function(require,module,exports){
 // `Symbol.prototype.description` getter
 // https://tc39.es/ecma262/#sec-symbol.prototype.description
 'use strict';
@@ -5760,14 +6228,14 @@ if (DESCRIPTORS && typeof NativeSymbol == 'function' && (!('description' in Nati
   });
 }
 
-},{"../internals/copy-constructor-properties":31,"../internals/descriptors":39,"../internals/export":48,"../internals/global":58,"../internals/has":59,"../internals/is-object":73,"../internals/object-define-property":89}],167:[function(require,module,exports){
+},{"../internals/copy-constructor-properties":31,"../internals/descriptors":39,"../internals/export":48,"../internals/global":58,"../internals/has":59,"../internals/is-object":73,"../internals/object-define-property":89}],168:[function(require,module,exports){
 var defineWellKnownSymbol = require('../internals/define-well-known-symbol');
 
 // `Symbol.iterator` well-known symbol
 // https://tc39.es/ecma262/#sec-symbol.iterator
 defineWellKnownSymbol('iterator');
 
-},{"../internals/define-well-known-symbol":38}],168:[function(require,module,exports){
+},{"../internals/define-well-known-symbol":38}],169:[function(require,module,exports){
 'use strict';
 var $ = require('../internals/export');
 var global = require('../internals/global');
@@ -6080,14 +6548,14 @@ setToStringTag($Symbol, SYMBOL);
 
 hiddenKeys[HIDDEN] = true;
 
-},{"../internals/an-object":8,"../internals/array-iteration":17,"../internals/create-non-enumerable-property":34,"../internals/create-property-descriptor":35,"../internals/define-well-known-symbol":38,"../internals/descriptors":39,"../internals/export":48,"../internals/fails":49,"../internals/get-built-in":53,"../internals/global":58,"../internals/has":59,"../internals/hidden-keys":60,"../internals/internal-state":69,"../internals/is-array":71,"../internals/is-object":73,"../internals/is-pure":74,"../internals/native-symbol":82,"../internals/object-create":87,"../internals/object-define-property":89,"../internals/object-get-own-property-descriptor":90,"../internals/object-get-own-property-names":92,"../internals/object-get-own-property-names-external":91,"../internals/object-get-own-property-symbols":93,"../internals/object-keys":96,"../internals/object-property-is-enumerable":97,"../internals/redefine":105,"../internals/set-to-string-tag":114,"../internals/shared":117,"../internals/shared-key":115,"../internals/to-indexed-object":126,"../internals/to-object":129,"../internals/to-primitive":132,"../internals/uid":137,"../internals/use-symbol-as-uid":138,"../internals/well-known-symbol":140,"../internals/well-known-symbol-wrapped":139}],169:[function(require,module,exports){
+},{"../internals/an-object":8,"../internals/array-iteration":17,"../internals/create-non-enumerable-property":34,"../internals/create-property-descriptor":35,"../internals/define-well-known-symbol":38,"../internals/descriptors":39,"../internals/export":48,"../internals/fails":49,"../internals/get-built-in":53,"../internals/global":58,"../internals/has":59,"../internals/hidden-keys":60,"../internals/internal-state":69,"../internals/is-array":71,"../internals/is-object":73,"../internals/is-pure":74,"../internals/native-symbol":82,"../internals/object-create":87,"../internals/object-define-property":89,"../internals/object-get-own-property-descriptor":90,"../internals/object-get-own-property-names":92,"../internals/object-get-own-property-names-external":91,"../internals/object-get-own-property-symbols":93,"../internals/object-keys":96,"../internals/object-property-is-enumerable":97,"../internals/redefine":105,"../internals/set-to-string-tag":114,"../internals/shared":117,"../internals/shared-key":115,"../internals/to-indexed-object":126,"../internals/to-object":129,"../internals/to-primitive":132,"../internals/uid":137,"../internals/use-symbol-as-uid":138,"../internals/well-known-symbol":140,"../internals/well-known-symbol-wrapped":139}],170:[function(require,module,exports){
 var defineWellKnownSymbol = require('../internals/define-well-known-symbol');
 
 // `Symbol.toStringTag` well-known symbol
 // https://tc39.es/ecma262/#sec-symbol.tostringtag
 defineWellKnownSymbol('toStringTag');
 
-},{"../internals/define-well-known-symbol":38}],170:[function(require,module,exports){
+},{"../internals/define-well-known-symbol":38}],171:[function(require,module,exports){
 'use strict';
 var ArrayBufferViewCore = require('../internals/array-buffer-view-core');
 var $copyWithin = require('../internals/array-copy-within');
@@ -6101,7 +6569,7 @@ exportTypedArrayMethod('copyWithin', function copyWithin(target, start /* , end 
   return $copyWithin.call(aTypedArray(this), target, start, arguments.length > 2 ? arguments[2] : undefined);
 });
 
-},{"../internals/array-buffer-view-core":10,"../internals/array-copy-within":12}],171:[function(require,module,exports){
+},{"../internals/array-buffer-view-core":10,"../internals/array-copy-within":12}],172:[function(require,module,exports){
 'use strict';
 var ArrayBufferViewCore = require('../internals/array-buffer-view-core');
 var $every = require('../internals/array-iteration').every;
@@ -6115,7 +6583,7 @@ exportTypedArrayMethod('every', function every(callbackfn /* , thisArg */) {
   return $every(aTypedArray(this), callbackfn, arguments.length > 1 ? arguments[1] : undefined);
 });
 
-},{"../internals/array-buffer-view-core":10,"../internals/array-iteration":17}],172:[function(require,module,exports){
+},{"../internals/array-buffer-view-core":10,"../internals/array-iteration":17}],173:[function(require,module,exports){
 'use strict';
 var ArrayBufferViewCore = require('../internals/array-buffer-view-core');
 var $fill = require('../internals/array-fill');
@@ -6130,7 +6598,7 @@ exportTypedArrayMethod('fill', function fill(value /* , start, end */) {
   return $fill.apply(aTypedArray(this), arguments);
 });
 
-},{"../internals/array-buffer-view-core":10,"../internals/array-fill":13}],173:[function(require,module,exports){
+},{"../internals/array-buffer-view-core":10,"../internals/array-fill":13}],174:[function(require,module,exports){
 'use strict';
 var ArrayBufferViewCore = require('../internals/array-buffer-view-core');
 var $filter = require('../internals/array-iteration').filter;
@@ -6152,7 +6620,7 @@ exportTypedArrayMethod('filter', function filter(callbackfn /* , thisArg */) {
   return result;
 });
 
-},{"../internals/array-buffer-view-core":10,"../internals/array-iteration":17,"../internals/species-constructor":118}],174:[function(require,module,exports){
+},{"../internals/array-buffer-view-core":10,"../internals/array-iteration":17,"../internals/species-constructor":118}],175:[function(require,module,exports){
 'use strict';
 var ArrayBufferViewCore = require('../internals/array-buffer-view-core');
 var $findIndex = require('../internals/array-iteration').findIndex;
@@ -6166,7 +6634,7 @@ exportTypedArrayMethod('findIndex', function findIndex(predicate /* , thisArg */
   return $findIndex(aTypedArray(this), predicate, arguments.length > 1 ? arguments[1] : undefined);
 });
 
-},{"../internals/array-buffer-view-core":10,"../internals/array-iteration":17}],175:[function(require,module,exports){
+},{"../internals/array-buffer-view-core":10,"../internals/array-iteration":17}],176:[function(require,module,exports){
 'use strict';
 var ArrayBufferViewCore = require('../internals/array-buffer-view-core');
 var $find = require('../internals/array-iteration').find;
@@ -6180,7 +6648,7 @@ exportTypedArrayMethod('find', function find(predicate /* , thisArg */) {
   return $find(aTypedArray(this), predicate, arguments.length > 1 ? arguments[1] : undefined);
 });
 
-},{"../internals/array-buffer-view-core":10,"../internals/array-iteration":17}],176:[function(require,module,exports){
+},{"../internals/array-buffer-view-core":10,"../internals/array-iteration":17}],177:[function(require,module,exports){
 'use strict';
 var ArrayBufferViewCore = require('../internals/array-buffer-view-core');
 var $forEach = require('../internals/array-iteration').forEach;
@@ -6194,7 +6662,7 @@ exportTypedArrayMethod('forEach', function forEach(callbackfn /* , thisArg */) {
   $forEach(aTypedArray(this), callbackfn, arguments.length > 1 ? arguments[1] : undefined);
 });
 
-},{"../internals/array-buffer-view-core":10,"../internals/array-iteration":17}],177:[function(require,module,exports){
+},{"../internals/array-buffer-view-core":10,"../internals/array-iteration":17}],178:[function(require,module,exports){
 'use strict';
 var ArrayBufferViewCore = require('../internals/array-buffer-view-core');
 var $includes = require('../internals/array-includes').includes;
@@ -6208,7 +6676,7 @@ exportTypedArrayMethod('includes', function includes(searchElement /* , fromInde
   return $includes(aTypedArray(this), searchElement, arguments.length > 1 ? arguments[1] : undefined);
 });
 
-},{"../internals/array-buffer-view-core":10,"../internals/array-includes":16}],178:[function(require,module,exports){
+},{"../internals/array-buffer-view-core":10,"../internals/array-includes":16}],179:[function(require,module,exports){
 'use strict';
 var ArrayBufferViewCore = require('../internals/array-buffer-view-core');
 var $indexOf = require('../internals/array-includes').indexOf;
@@ -6222,7 +6690,7 @@ exportTypedArrayMethod('indexOf', function indexOf(searchElement /* , fromIndex 
   return $indexOf(aTypedArray(this), searchElement, arguments.length > 1 ? arguments[1] : undefined);
 });
 
-},{"../internals/array-buffer-view-core":10,"../internals/array-includes":16}],179:[function(require,module,exports){
+},{"../internals/array-buffer-view-core":10,"../internals/array-includes":16}],180:[function(require,module,exports){
 'use strict';
 var global = require('../internals/global');
 var ArrayBufferViewCore = require('../internals/array-buffer-view-core');
@@ -6262,7 +6730,7 @@ exportTypedArrayMethod('values', typedArrayValues, !CORRECT_ITER_NAME);
 // https://tc39.es/ecma262/#sec-%typedarray%.prototype-@@iterator
 exportTypedArrayMethod(ITERATOR, typedArrayValues, !CORRECT_ITER_NAME);
 
-},{"../internals/array-buffer-view-core":10,"../internals/global":58,"../internals/well-known-symbol":140,"../modules/es.array.iterator":146}],180:[function(require,module,exports){
+},{"../internals/array-buffer-view-core":10,"../internals/global":58,"../internals/well-known-symbol":140,"../modules/es.array.iterator":146}],181:[function(require,module,exports){
 'use strict';
 var ArrayBufferViewCore = require('../internals/array-buffer-view-core');
 
@@ -6277,7 +6745,7 @@ exportTypedArrayMethod('join', function join(separator) {
   return $join.apply(aTypedArray(this), arguments);
 });
 
-},{"../internals/array-buffer-view-core":10}],181:[function(require,module,exports){
+},{"../internals/array-buffer-view-core":10}],182:[function(require,module,exports){
 'use strict';
 var ArrayBufferViewCore = require('../internals/array-buffer-view-core');
 var $lastIndexOf = require('../internals/array-last-index-of');
@@ -6292,7 +6760,7 @@ exportTypedArrayMethod('lastIndexOf', function lastIndexOf(searchElement /* , fr
   return $lastIndexOf.apply(aTypedArray(this), arguments);
 });
 
-},{"../internals/array-buffer-view-core":10,"../internals/array-last-index-of":18}],182:[function(require,module,exports){
+},{"../internals/array-buffer-view-core":10,"../internals/array-last-index-of":18}],183:[function(require,module,exports){
 'use strict';
 var ArrayBufferViewCore = require('../internals/array-buffer-view-core');
 var $map = require('../internals/array-iteration').map;
@@ -6310,7 +6778,7 @@ exportTypedArrayMethod('map', function map(mapfn /* , thisArg */) {
   });
 });
 
-},{"../internals/array-buffer-view-core":10,"../internals/array-iteration":17,"../internals/species-constructor":118}],183:[function(require,module,exports){
+},{"../internals/array-buffer-view-core":10,"../internals/array-iteration":17,"../internals/species-constructor":118}],184:[function(require,module,exports){
 'use strict';
 var ArrayBufferViewCore = require('../internals/array-buffer-view-core');
 var $reduceRight = require('../internals/array-reduce').right;
@@ -6324,7 +6792,7 @@ exportTypedArrayMethod('reduceRight', function reduceRight(callbackfn /* , initi
   return $reduceRight(aTypedArray(this), callbackfn, arguments.length, arguments.length > 1 ? arguments[1] : undefined);
 });
 
-},{"../internals/array-buffer-view-core":10,"../internals/array-reduce":22}],184:[function(require,module,exports){
+},{"../internals/array-buffer-view-core":10,"../internals/array-reduce":22}],185:[function(require,module,exports){
 'use strict';
 var ArrayBufferViewCore = require('../internals/array-buffer-view-core');
 var $reduce = require('../internals/array-reduce').left;
@@ -6338,7 +6806,7 @@ exportTypedArrayMethod('reduce', function reduce(callbackfn /* , initialValue */
   return $reduce(aTypedArray(this), callbackfn, arguments.length, arguments.length > 1 ? arguments[1] : undefined);
 });
 
-},{"../internals/array-buffer-view-core":10,"../internals/array-reduce":22}],185:[function(require,module,exports){
+},{"../internals/array-buffer-view-core":10,"../internals/array-reduce":22}],186:[function(require,module,exports){
 'use strict';
 var ArrayBufferViewCore = require('../internals/array-buffer-view-core');
 
@@ -6361,7 +6829,7 @@ exportTypedArrayMethod('reverse', function reverse() {
   } return that;
 });
 
-},{"../internals/array-buffer-view-core":10}],186:[function(require,module,exports){
+},{"../internals/array-buffer-view-core":10}],187:[function(require,module,exports){
 'use strict';
 var ArrayBufferViewCore = require('../internals/array-buffer-view-core');
 var toLength = require('../internals/to-length');
@@ -6390,7 +6858,7 @@ exportTypedArrayMethod('set', function set(arrayLike /* , offset */) {
   while (index < len) this[offset + index] = src[index++];
 }, FORCED);
 
-},{"../internals/array-buffer-view-core":10,"../internals/fails":49,"../internals/to-length":128,"../internals/to-object":129,"../internals/to-offset":130}],187:[function(require,module,exports){
+},{"../internals/array-buffer-view-core":10,"../internals/fails":49,"../internals/to-length":128,"../internals/to-object":129,"../internals/to-offset":130}],188:[function(require,module,exports){
 'use strict';
 var ArrayBufferViewCore = require('../internals/array-buffer-view-core');
 var speciesConstructor = require('../internals/species-constructor');
@@ -6418,7 +6886,7 @@ exportTypedArrayMethod('slice', function slice(start, end) {
   return result;
 }, FORCED);
 
-},{"../internals/array-buffer-view-core":10,"../internals/fails":49,"../internals/species-constructor":118}],188:[function(require,module,exports){
+},{"../internals/array-buffer-view-core":10,"../internals/fails":49,"../internals/species-constructor":118}],189:[function(require,module,exports){
 'use strict';
 var ArrayBufferViewCore = require('../internals/array-buffer-view-core');
 var $some = require('../internals/array-iteration').some;
@@ -6432,7 +6900,7 @@ exportTypedArrayMethod('some', function some(callbackfn /* , thisArg */) {
   return $some(aTypedArray(this), callbackfn, arguments.length > 1 ? arguments[1] : undefined);
 });
 
-},{"../internals/array-buffer-view-core":10,"../internals/array-iteration":17}],189:[function(require,module,exports){
+},{"../internals/array-buffer-view-core":10,"../internals/array-iteration":17}],190:[function(require,module,exports){
 'use strict';
 var ArrayBufferViewCore = require('../internals/array-buffer-view-core');
 
@@ -6446,7 +6914,7 @@ exportTypedArrayMethod('sort', function sort(comparefn) {
   return $sort.call(aTypedArray(this), comparefn);
 });
 
-},{"../internals/array-buffer-view-core":10}],190:[function(require,module,exports){
+},{"../internals/array-buffer-view-core":10}],191:[function(require,module,exports){
 'use strict';
 var ArrayBufferViewCore = require('../internals/array-buffer-view-core');
 var toLength = require('../internals/to-length');
@@ -6469,7 +6937,7 @@ exportTypedArrayMethod('subarray', function subarray(begin, end) {
   );
 });
 
-},{"../internals/array-buffer-view-core":10,"../internals/species-constructor":118,"../internals/to-absolute-index":124,"../internals/to-length":128}],191:[function(require,module,exports){
+},{"../internals/array-buffer-view-core":10,"../internals/species-constructor":118,"../internals/to-absolute-index":124,"../internals/to-length":128}],192:[function(require,module,exports){
 'use strict';
 var global = require('../internals/global');
 var ArrayBufferViewCore = require('../internals/array-buffer-view-core');
@@ -6498,7 +6966,7 @@ exportTypedArrayMethod('toLocaleString', function toLocaleString() {
   return $toLocaleString.apply(TO_LOCALE_STRING_BUG ? $slice.call(aTypedArray(this)) : aTypedArray(this), arguments);
 }, FORCED);
 
-},{"../internals/array-buffer-view-core":10,"../internals/fails":49,"../internals/global":58}],192:[function(require,module,exports){
+},{"../internals/array-buffer-view-core":10,"../internals/fails":49,"../internals/global":58}],193:[function(require,module,exports){
 'use strict';
 var exportTypedArrayMethod = require('../internals/array-buffer-view-core').exportTypedArrayMethod;
 var fails = require('../internals/fails');
@@ -6521,7 +6989,7 @@ var IS_NOT_ARRAY_METHOD = Uint8ArrayPrototype.toString != arrayToString;
 // https://tc39.es/ecma262/#sec-%typedarray%.prototype.tostring
 exportTypedArrayMethod('toString', arrayToString, IS_NOT_ARRAY_METHOD);
 
-},{"../internals/array-buffer-view-core":10,"../internals/fails":49,"../internals/global":58}],193:[function(require,module,exports){
+},{"../internals/array-buffer-view-core":10,"../internals/fails":49,"../internals/global":58}],194:[function(require,module,exports){
 var createTypedArrayConstructor = require('../internals/typed-array-constructor');
 
 // `Uint8Array` constructor
@@ -6532,11 +7000,11 @@ createTypedArrayConstructor('Uint8', function (init) {
   };
 });
 
-},{"../internals/typed-array-constructor":134}],194:[function(require,module,exports){
+},{"../internals/typed-array-constructor":134}],195:[function(require,module,exports){
 // TODO: Remove from `core-js@4`
 require('./es.global-this');
 
-},{"./es.global-this":151}],195:[function(require,module,exports){
+},{"./es.global-this":151}],196:[function(require,module,exports){
 'use strict';
 var $ = require('../internals/export');
 var IS_PURE = require('../internals/is-pure');
@@ -6550,7 +7018,7 @@ $({ target: 'Map', proto: true, real: true, forced: IS_PURE }, {
   }
 });
 
-},{"../internals/collection-delete-all":28,"../internals/export":48,"../internals/is-pure":74}],196:[function(require,module,exports){
+},{"../internals/collection-delete-all":28,"../internals/export":48,"../internals/is-pure":74}],197:[function(require,module,exports){
 'use strict';
 var $ = require('../internals/export');
 var IS_PURE = require('../internals/is-pure');
@@ -6572,7 +7040,7 @@ $({ target: 'Map', proto: true, real: true, forced: IS_PURE }, {
   }
 });
 
-},{"../internals/an-object":8,"../internals/export":48,"../internals/function-bind-context":52,"../internals/get-map-iterator":56,"../internals/is-pure":74,"../internals/iterate":76}],197:[function(require,module,exports){
+},{"../internals/an-object":8,"../internals/export":48,"../internals/function-bind-context":52,"../internals/get-map-iterator":56,"../internals/is-pure":74,"../internals/iterate":76}],198:[function(require,module,exports){
 'use strict';
 var $ = require('../internals/export');
 var IS_PURE = require('../internals/is-pure');
@@ -6600,7 +7068,7 @@ $({ target: 'Map', proto: true, real: true, forced: IS_PURE }, {
   }
 });
 
-},{"../internals/a-function":3,"../internals/an-object":8,"../internals/export":48,"../internals/function-bind-context":52,"../internals/get-built-in":53,"../internals/get-map-iterator":56,"../internals/is-pure":74,"../internals/iterate":76,"../internals/species-constructor":118}],198:[function(require,module,exports){
+},{"../internals/a-function":3,"../internals/an-object":8,"../internals/export":48,"../internals/function-bind-context":52,"../internals/get-built-in":53,"../internals/get-map-iterator":56,"../internals/is-pure":74,"../internals/iterate":76,"../internals/species-constructor":118}],199:[function(require,module,exports){
 'use strict';
 var $ = require('../internals/export');
 var IS_PURE = require('../internals/is-pure');
@@ -6622,7 +7090,7 @@ $({ target: 'Map', proto: true, real: true, forced: IS_PURE }, {
   }
 });
 
-},{"../internals/an-object":8,"../internals/export":48,"../internals/function-bind-context":52,"../internals/get-map-iterator":56,"../internals/is-pure":74,"../internals/iterate":76}],199:[function(require,module,exports){
+},{"../internals/an-object":8,"../internals/export":48,"../internals/function-bind-context":52,"../internals/get-map-iterator":56,"../internals/is-pure":74,"../internals/iterate":76}],200:[function(require,module,exports){
 'use strict';
 var $ = require('../internals/export');
 var IS_PURE = require('../internals/is-pure');
@@ -6644,7 +7112,7 @@ $({ target: 'Map', proto: true, real: true, forced: IS_PURE }, {
   }
 });
 
-},{"../internals/an-object":8,"../internals/export":48,"../internals/function-bind-context":52,"../internals/get-map-iterator":56,"../internals/is-pure":74,"../internals/iterate":76}],200:[function(require,module,exports){
+},{"../internals/an-object":8,"../internals/export":48,"../internals/function-bind-context":52,"../internals/get-map-iterator":56,"../internals/is-pure":74,"../internals/iterate":76}],201:[function(require,module,exports){
 'use strict';
 var $ = require('../internals/export');
 var IS_PURE = require('../internals/is-pure');
@@ -6663,7 +7131,7 @@ $({ target: 'Map', proto: true, real: true, forced: IS_PURE }, {
   }
 });
 
-},{"../internals/an-object":8,"../internals/export":48,"../internals/get-map-iterator":56,"../internals/is-pure":74,"../internals/iterate":76,"../internals/same-value-zero":111}],201:[function(require,module,exports){
+},{"../internals/an-object":8,"../internals/export":48,"../internals/get-map-iterator":56,"../internals/is-pure":74,"../internals/iterate":76,"../internals/same-value-zero":111}],202:[function(require,module,exports){
 'use strict';
 var $ = require('../internals/export');
 var IS_PURE = require('../internals/is-pure');
@@ -6681,7 +7149,7 @@ $({ target: 'Map', proto: true, real: true, forced: IS_PURE }, {
   }
 });
 
-},{"../internals/an-object":8,"../internals/export":48,"../internals/get-map-iterator":56,"../internals/is-pure":74,"../internals/iterate":76}],202:[function(require,module,exports){
+},{"../internals/an-object":8,"../internals/export":48,"../internals/get-map-iterator":56,"../internals/is-pure":74,"../internals/iterate":76}],203:[function(require,module,exports){
 'use strict';
 var $ = require('../internals/export');
 var IS_PURE = require('../internals/is-pure');
@@ -6709,7 +7177,7 @@ $({ target: 'Map', proto: true, real: true, forced: IS_PURE }, {
   }
 });
 
-},{"../internals/a-function":3,"../internals/an-object":8,"../internals/export":48,"../internals/function-bind-context":52,"../internals/get-built-in":53,"../internals/get-map-iterator":56,"../internals/is-pure":74,"../internals/iterate":76,"../internals/species-constructor":118}],203:[function(require,module,exports){
+},{"../internals/a-function":3,"../internals/an-object":8,"../internals/export":48,"../internals/function-bind-context":52,"../internals/get-built-in":53,"../internals/get-map-iterator":56,"../internals/is-pure":74,"../internals/iterate":76,"../internals/species-constructor":118}],204:[function(require,module,exports){
 'use strict';
 var $ = require('../internals/export');
 var IS_PURE = require('../internals/is-pure');
@@ -6737,7 +7205,7 @@ $({ target: 'Map', proto: true, real: true, forced: IS_PURE }, {
   }
 });
 
-},{"../internals/a-function":3,"../internals/an-object":8,"../internals/export":48,"../internals/function-bind-context":52,"../internals/get-built-in":53,"../internals/get-map-iterator":56,"../internals/is-pure":74,"../internals/iterate":76,"../internals/species-constructor":118}],204:[function(require,module,exports){
+},{"../internals/a-function":3,"../internals/an-object":8,"../internals/export":48,"../internals/function-bind-context":52,"../internals/get-built-in":53,"../internals/get-map-iterator":56,"../internals/is-pure":74,"../internals/iterate":76,"../internals/species-constructor":118}],205:[function(require,module,exports){
 'use strict';
 var $ = require('../internals/export');
 var IS_PURE = require('../internals/is-pure');
@@ -6760,7 +7228,7 @@ $({ target: 'Map', proto: true, real: true, forced: IS_PURE }, {
   }
 });
 
-},{"../internals/a-function":3,"../internals/an-object":8,"../internals/export":48,"../internals/is-pure":74,"../internals/iterate":76}],205:[function(require,module,exports){
+},{"../internals/a-function":3,"../internals/an-object":8,"../internals/export":48,"../internals/is-pure":74,"../internals/iterate":76}],206:[function(require,module,exports){
 'use strict';
 var $ = require('../internals/export');
 var IS_PURE = require('../internals/is-pure');
@@ -6791,7 +7259,7 @@ $({ target: 'Map', proto: true, real: true, forced: IS_PURE }, {
   }
 });
 
-},{"../internals/a-function":3,"../internals/an-object":8,"../internals/export":48,"../internals/get-map-iterator":56,"../internals/is-pure":74,"../internals/iterate":76}],206:[function(require,module,exports){
+},{"../internals/a-function":3,"../internals/an-object":8,"../internals/export":48,"../internals/get-map-iterator":56,"../internals/is-pure":74,"../internals/iterate":76}],207:[function(require,module,exports){
 'use strict';
 var $ = require('../internals/export');
 var IS_PURE = require('../internals/is-pure');
@@ -6813,7 +7281,7 @@ $({ target: 'Map', proto: true, real: true, forced: IS_PURE }, {
   }
 });
 
-},{"../internals/an-object":8,"../internals/export":48,"../internals/function-bind-context":52,"../internals/get-map-iterator":56,"../internals/is-pure":74,"../internals/iterate":76}],207:[function(require,module,exports){
+},{"../internals/an-object":8,"../internals/export":48,"../internals/function-bind-context":52,"../internals/get-map-iterator":56,"../internals/is-pure":74,"../internals/iterate":76}],208:[function(require,module,exports){
 'use strict';
 var $ = require('../internals/export');
 var IS_PURE = require('../internals/is-pure');
@@ -6837,7 +7305,7 @@ $({ target: 'Map', proto: true, real: true, forced: IS_PURE }, {
   }
 });
 
-},{"../internals/a-function":3,"../internals/an-object":8,"../internals/export":48,"../internals/is-pure":74}],208:[function(require,module,exports){
+},{"../internals/a-function":3,"../internals/an-object":8,"../internals/export":48,"../internals/is-pure":74}],209:[function(require,module,exports){
 var global = require('../internals/global');
 var DOMIterables = require('../internals/dom-iterables');
 var forEach = require('../internals/array-for-each');
@@ -6854,7 +7322,7 @@ for (var COLLECTION_NAME in DOMIterables) {
   }
 }
 
-},{"../internals/array-for-each":14,"../internals/create-non-enumerable-property":34,"../internals/dom-iterables":41,"../internals/global":58}],209:[function(require,module,exports){
+},{"../internals/array-for-each":14,"../internals/create-non-enumerable-property":34,"../internals/dom-iterables":41,"../internals/global":58}],210:[function(require,module,exports){
 var global = require('../internals/global');
 var DOMIterables = require('../internals/dom-iterables');
 var ArrayIteratorMethods = require('../modules/es.array.iterator');
@@ -6889,7 +7357,7 @@ for (var COLLECTION_NAME in DOMIterables) {
   }
 }
 
-},{"../internals/create-non-enumerable-property":34,"../internals/dom-iterables":41,"../internals/global":58,"../internals/well-known-symbol":140,"../modules/es.array.iterator":146}],210:[function(require,module,exports){
+},{"../internals/create-non-enumerable-property":34,"../internals/dom-iterables":41,"../internals/global":58,"../internals/well-known-symbol":140,"../modules/es.array.iterator":146}],211:[function(require,module,exports){
 'use strict';
 // TODO: in core-js@4, move /modules/ dependencies to public entries for better optimization by tools like `preset-env`
 require('../modules/es.array.iterator');
@@ -7238,7 +7706,7 @@ module.exports = {
   getState: getInternalParamsState
 };
 
-},{"../internals/an-instance":7,"../internals/an-object":8,"../internals/classof":27,"../internals/create-iterator-constructor":33,"../internals/create-property-descriptor":35,"../internals/export":48,"../internals/function-bind-context":52,"../internals/get-built-in":53,"../internals/get-iterator":55,"../internals/get-iterator-method":54,"../internals/has":59,"../internals/internal-state":69,"../internals/is-object":73,"../internals/native-url":83,"../internals/object-create":87,"../internals/redefine":105,"../internals/redefine-all":104,"../internals/set-to-string-tag":114,"../internals/well-known-symbol":140,"../modules/es.array.iterator":146}],211:[function(require,module,exports){
+},{"../internals/an-instance":7,"../internals/an-object":8,"../internals/classof":27,"../internals/create-iterator-constructor":33,"../internals/create-property-descriptor":35,"../internals/export":48,"../internals/function-bind-context":52,"../internals/get-built-in":53,"../internals/get-iterator":55,"../internals/get-iterator-method":54,"../internals/has":59,"../internals/internal-state":69,"../internals/is-object":73,"../internals/native-url":83,"../internals/object-create":87,"../internals/redefine":105,"../internals/redefine-all":104,"../internals/set-to-string-tag":114,"../internals/well-known-symbol":140,"../modules/es.array.iterator":146}],212:[function(require,module,exports){
 'use strict';
 // TODO: in core-js@4, move /modules/ dependencies to public entries for better optimization by tools like `preset-env`
 require('../modules/es.string.iterator');
@@ -8247,7 +8715,7 @@ $({ global: true, forced: !USE_NATIVE_URL, sham: !DESCRIPTORS }, {
   URL: URLConstructor
 });
 
-},{"../internals/an-instance":7,"../internals/array-from":15,"../internals/descriptors":39,"../internals/export":48,"../internals/global":58,"../internals/has":59,"../internals/internal-state":69,"../internals/native-url":83,"../internals/object-assign":86,"../internals/object-define-properties":88,"../internals/redefine":105,"../internals/set-to-string-tag":114,"../internals/string-multibyte":119,"../internals/string-punycode-to-ascii":120,"../modules/es.string.iterator":161,"../modules/web.url-search-params":210}],212:[function(require,module,exports){
+},{"../internals/an-instance":7,"../internals/array-from":15,"../internals/descriptors":39,"../internals/export":48,"../internals/global":58,"../internals/has":59,"../internals/internal-state":69,"../internals/native-url":83,"../internals/object-assign":86,"../internals/object-define-properties":88,"../internals/redefine":105,"../internals/set-to-string-tag":114,"../internals/string-multibyte":119,"../internals/string-punycode-to-ascii":120,"../modules/es.string.iterator":162,"../modules/web.url-search-params":211}],213:[function(require,module,exports){
 "use strict";
 
 require("core-js/modules/es.object.to-string.js");
@@ -8262,7 +8730,7 @@ require('whatwg-fetch');
 
 module.exports = self.fetch.bind(self);
 
-},{"core-js/modules/es.object.to-string.js":157,"core-js/modules/es.promise.js":158,"whatwg-fetch":214}],213:[function(require,module,exports){
+},{"core-js/modules/es.object.to-string.js":158,"core-js/modules/es.promise.js":159,"whatwg-fetch":215}],214:[function(require,module,exports){
 "use strict";
 
 require("core-js/modules/es.symbol.js");
@@ -9026,7 +9494,7 @@ try {
   Function("r", "regeneratorRuntime = r")(runtime);
 }
 
-},{"core-js/modules/es.array.for-each.js":144,"core-js/modules/es.array.iterator.js":146,"core-js/modules/es.array.slice.js":149,"core-js/modules/es.function.name.js":150,"core-js/modules/es.json.to-string-tag.js":152,"core-js/modules/es.math.to-string-tag.js":154,"core-js/modules/es.object.get-prototype-of.js":156,"core-js/modules/es.object.to-string.js":157,"core-js/modules/es.promise.js":158,"core-js/modules/es.regexp.to-string.js":160,"core-js/modules/es.string.iterator.js":161,"core-js/modules/es.symbol.async-iterator.js":165,"core-js/modules/es.symbol.description.js":166,"core-js/modules/es.symbol.iterator.js":167,"core-js/modules/es.symbol.js":168,"core-js/modules/es.symbol.to-string-tag.js":169,"core-js/modules/web.dom-collections.for-each.js":208,"core-js/modules/web.dom-collections.iterator.js":209}],214:[function(require,module,exports){
+},{"core-js/modules/es.array.for-each.js":144,"core-js/modules/es.array.iterator.js":146,"core-js/modules/es.array.slice.js":149,"core-js/modules/es.function.name.js":150,"core-js/modules/es.json.to-string-tag.js":152,"core-js/modules/es.math.to-string-tag.js":154,"core-js/modules/es.object.get-prototype-of.js":156,"core-js/modules/es.object.to-string.js":158,"core-js/modules/es.promise.js":159,"core-js/modules/es.regexp.to-string.js":161,"core-js/modules/es.string.iterator.js":162,"core-js/modules/es.symbol.async-iterator.js":166,"core-js/modules/es.symbol.description.js":167,"core-js/modules/es.symbol.iterator.js":168,"core-js/modules/es.symbol.js":169,"core-js/modules/es.symbol.to-string-tag.js":170,"core-js/modules/web.dom-collections.for-each.js":209,"core-js/modules/web.dom-collections.iterator.js":210}],215:[function(require,module,exports){
 "use strict";
 
 require("core-js/modules/es.symbol.js");
@@ -9752,4 +10220,4 @@ function _typeof(obj) { "@babel/helpers - typeof"; if (typeof Symbol === "functi
   });
 });
 
-},{"core-js/modules/es.array-buffer.constructor.js":142,"core-js/modules/es.array.for-each.js":144,"core-js/modules/es.array.index-of.js":145,"core-js/modules/es.array.iterator.js":146,"core-js/modules/es.array.join.js":147,"core-js/modules/es.array.map.js":148,"core-js/modules/es.array.slice.js":149,"core-js/modules/es.function.name.js":150,"core-js/modules/es.global-this.js":151,"core-js/modules/es.object.get-own-property-names.js":155,"core-js/modules/es.object.to-string.js":157,"core-js/modules/es.promise.js":158,"core-js/modules/es.regexp.exec.js":159,"core-js/modules/es.regexp.to-string.js":160,"core-js/modules/es.string.iterator.js":161,"core-js/modules/es.string.replace.js":162,"core-js/modules/es.string.split.js":163,"core-js/modules/es.string.trim.js":164,"core-js/modules/es.symbol.description.js":166,"core-js/modules/es.symbol.iterator.js":167,"core-js/modules/es.symbol.js":168,"core-js/modules/es.typed-array.copy-within.js":170,"core-js/modules/es.typed-array.every.js":171,"core-js/modules/es.typed-array.fill.js":172,"core-js/modules/es.typed-array.filter.js":173,"core-js/modules/es.typed-array.find-index.js":174,"core-js/modules/es.typed-array.find.js":175,"core-js/modules/es.typed-array.for-each.js":176,"core-js/modules/es.typed-array.includes.js":177,"core-js/modules/es.typed-array.index-of.js":178,"core-js/modules/es.typed-array.iterator.js":179,"core-js/modules/es.typed-array.join.js":180,"core-js/modules/es.typed-array.last-index-of.js":181,"core-js/modules/es.typed-array.map.js":182,"core-js/modules/es.typed-array.reduce-right.js":183,"core-js/modules/es.typed-array.reduce.js":184,"core-js/modules/es.typed-array.reverse.js":185,"core-js/modules/es.typed-array.set.js":186,"core-js/modules/es.typed-array.slice.js":187,"core-js/modules/es.typed-array.some.js":188,"core-js/modules/es.typed-array.sort.js":189,"core-js/modules/es.typed-array.subarray.js":190,"core-js/modules/es.typed-array.to-locale-string.js":191,"core-js/modules/es.typed-array.to-string.js":192,"core-js/modules/es.typed-array.uint8-array.js":193,"core-js/modules/esnext.global-this.js":194,"core-js/modules/web.dom-collections.for-each.js":208,"core-js/modules/web.dom-collections.iterator.js":209,"core-js/modules/web.url.js":211}]},{},[2]);
+},{"core-js/modules/es.array-buffer.constructor.js":142,"core-js/modules/es.array.for-each.js":144,"core-js/modules/es.array.index-of.js":145,"core-js/modules/es.array.iterator.js":146,"core-js/modules/es.array.join.js":147,"core-js/modules/es.array.map.js":148,"core-js/modules/es.array.slice.js":149,"core-js/modules/es.function.name.js":150,"core-js/modules/es.global-this.js":151,"core-js/modules/es.object.get-own-property-names.js":155,"core-js/modules/es.object.to-string.js":158,"core-js/modules/es.promise.js":159,"core-js/modules/es.regexp.exec.js":160,"core-js/modules/es.regexp.to-string.js":161,"core-js/modules/es.string.iterator.js":162,"core-js/modules/es.string.replace.js":163,"core-js/modules/es.string.split.js":164,"core-js/modules/es.string.trim.js":165,"core-js/modules/es.symbol.description.js":167,"core-js/modules/es.symbol.iterator.js":168,"core-js/modules/es.symbol.js":169,"core-js/modules/es.typed-array.copy-within.js":171,"core-js/modules/es.typed-array.every.js":172,"core-js/modules/es.typed-array.fill.js":173,"core-js/modules/es.typed-array.filter.js":174,"core-js/modules/es.typed-array.find-index.js":175,"core-js/modules/es.typed-array.find.js":176,"core-js/modules/es.typed-array.for-each.js":177,"core-js/modules/es.typed-array.includes.js":178,"core-js/modules/es.typed-array.index-of.js":179,"core-js/modules/es.typed-array.iterator.js":180,"core-js/modules/es.typed-array.join.js":181,"core-js/modules/es.typed-array.last-index-of.js":182,"core-js/modules/es.typed-array.map.js":183,"core-js/modules/es.typed-array.reduce-right.js":184,"core-js/modules/es.typed-array.reduce.js":185,"core-js/modules/es.typed-array.reverse.js":186,"core-js/modules/es.typed-array.set.js":187,"core-js/modules/es.typed-array.slice.js":188,"core-js/modules/es.typed-array.some.js":189,"core-js/modules/es.typed-array.sort.js":190,"core-js/modules/es.typed-array.subarray.js":191,"core-js/modules/es.typed-array.to-locale-string.js":192,"core-js/modules/es.typed-array.to-string.js":193,"core-js/modules/es.typed-array.uint8-array.js":194,"core-js/modules/esnext.global-this.js":195,"core-js/modules/web.dom-collections.for-each.js":209,"core-js/modules/web.dom-collections.iterator.js":210,"core-js/modules/web.url.js":212}]},{},[2]);
