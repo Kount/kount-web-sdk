@@ -1,23 +1,5 @@
-export const KountSDKVersion = '1.1.4';
-
-class ServerConfig {
-
-    constructor(ttlms, collect) {
-        if (typeof ttlms !== "number") {
-            throw `ttlms is not number: ${typeof ttlms}`;
-        }
-        if (typeof collect !== "boolean") {
-            throw `collect is not boolean: ${typeof collect}`;
-        }
-        this.ttlms = ttlms;
-        this.collect = collect;
-    }
-
-    static createDefaultServerConfig() {
-        return new ServerConfig(900000, true);
-    }
-
-}
+/* eslint-disable no-throw-literal */
+export const KountSDKVersion = '1.1.6';
 
 export default function kountSDK(config, sessionID) {
     
@@ -73,13 +55,14 @@ export default function kountSDK(config, sessionID) {
                 this.callbacks = config.callbacks;
             }
 
-            // config-hostname
-            const configuredHostname = config.hostname;
-            if ((typeof configuredHostname === 'undefined') || (!this.isHostnameValid(configuredHostname))) {
-                this.log(`SDK Disabled: invalid hostname:${configuredHostname}`);
+            // getHostname
+            const hostname = this._getHostname(config);
+            if (hostname == null) {
+                this.log(`SDK Disabled: unresolved hostname.`);
                 return false;
             }
-            this.collectorURL = `https://${configuredHostname}`;
+
+            this.collectorURL = `https://${hostname}`;
             this.log(`collectorURL=${this.collectorURL}`);
 
             // config-spa
@@ -127,9 +110,21 @@ export default function kountSDK(config, sessionID) {
                 
                 this.log(`${functionName} start...`);
 
-                await this._updateSDKServerConfig();
-                
-                if (this.serverConfig.collect) {
+                this.serverConfig = await this._getServerConfig();
+
+                if (this.serverConfig.da.enabled) {
+                    if (config.triggers) {
+                        this.log(`${functionName} _runDA start...`);
+                        this._runDA(config.triggers, this.serverConfig.da.subdomain, this.serverConfig.da.orgId);
+                        this.log(`${functionName} _runDA end...`);
+                    } else {
+                        this.log(`${functionName} _runDA disabled:triggers missing.`);                       
+                    }
+                } else {
+                    this.log(`${functionName} _runDA disabled.`);                    
+                }
+
+                if (this.serverConfig.collector.run) {
                     this.log(`${functionName} runCollector start...`);
                     this.runCollector();
                     this.log(`${functionName} runCollector end...`);
@@ -195,9 +190,11 @@ export default function kountSDK(config, sessionID) {
 
         },
 
-        async _updateSDKServerConfig() {
+        async _getServerConfig() {
 
-            const functionName = "_updateSDKServerConfig";
+            const functionName = "_getServerConfig";
+
+            var serverConfig = null
 
             try {
 
@@ -207,41 +204,242 @@ export default function kountSDK(config, sessionID) {
 
                 const response = await this._wrapPromiseInTimeout(this.updateSDKServerConfigTimeoutInMS, fetch(url));
                 if (!response.ok) {
-                    let msg = `${functionName} response not ok: ${response.status}`;
-                    this.addError(msg);
-                    this.log(msg);
-                    throw msg;
+                    throw `response not ok: ${response.status}`;
                 }
 
                 const jsonConfig = await response.json();
 
-                if ((typeof jsonConfig.ttlms == 'undefined') || (typeof jsonConfig.collection == 'undefined') || (typeof jsonConfig.collection.collect == 'undefined')) {
-                    let msg = `${functionName} invalid response JSON:${JSON.stringify(jsonConfig)}`
-                    this.log(msg);
-                    this.addError(msg);
-                    throw msg
-                }
-
-                this.serverConfig = new ServerConfig(jsonConfig.ttlms, jsonConfig.collection.collect);
-
-                this.log(`${functionName} config:${JSON.stringify(this.serverConfig)}`);
+                serverConfig = this._translateJSONToServerConfig(jsonConfig);
 
             } catch (e) {
 
-                this.serverConfig = ServerConfig.createDefaultServerConfig();
-                let msg = `${functionName} error caught. Defaulted config: ${JSON.stringify(this.serverConfig)} e:${e}`;
+                let msg = `${functionName} error caught. e:${e}`;
                 this.log(msg);
                 this.addError(msg);
 
             } finally {
 
+                if (serverConfig == null) {
+                    serverConfig = {
+                        ttlms: 900000,
+                        collector: {
+                            run: true,
+                            featureFlags: {
+                                app: true,
+                                battery: true,
+                                browser: true,
+                                da: false,
+                                exp: true,
+                                page: true,
+                                ui: true
+                            }
+                        },
+                        da: {
+                            enabled: false
+                        }
+                    }
+                }
+
+                this.log(`${functionName} config: ${JSON.stringify(serverConfig)}`);
                 this.log(`${functionName} end...`);
-                
+                return serverConfig    
             }
 
         },
 
-        isHostnameValid(hostname) {
+        _translateJSONToServerConfig(jsonConfig) {
+            let ttlms = this._translateTTLMSConfig(jsonConfig);
+
+            let collectorConfig = this._translateCollectorConfig(jsonConfig)
+
+            let daConfig = this._translateDAConfig(jsonConfig);
+
+            return {
+                ttlms: ttlms,
+                collector: collectorConfig,
+                da: daConfig
+            }
+        },
+
+        _translateTTLMSConfig(jsonConfig) {
+            if (typeof jsonConfig.ttlms !== "number") {
+                return 900000;
+            }
+            return jsonConfig.ttlms;
+        },
+
+        _translateCollectorConfig(jsonConfig) {
+
+            const functionName = "_translateCollectorConfig";
+
+            let collectorConfig = null
+
+            try {
+
+                this.log(`${functionName} start...`);
+
+                if ((typeof jsonConfig.collection == 'undefined') || (typeof jsonConfig.collection.feature_flags == 'undefined')) {
+                    throw `invalid response JSON:${JSON.stringify(jsonConfig)}`
+                }
+                
+                if (typeof jsonConfig.collection.collect !== "boolean") {
+                    throw `collect is not boolean: ${typeof collection.collect}`;
+                }
+
+                let runCollector = jsonConfig.collection.collect;
+                if (runCollector) {
+                    
+                    const feature_flags = jsonConfig.collection.feature_flags
+    
+                    if (typeof feature_flags.app !== "boolean") {
+                        throw `app feature flag is not boolean: ${typeof feature_flags.app}`;
+                    }
+                    if (typeof feature_flags.battery !== "boolean") {
+                        throw `battery feature flag is not boolean: ${typeof feature_flags.battery}`;
+                    }
+                    if (typeof feature_flags.browser !== "boolean") {
+                        throw `browser feature flag is not boolean: ${typeof feature_flags.browser}`;
+                    }
+                    if (typeof feature_flags.da !== "boolean") {
+                        throw `da feature flag is not boolean: ${typeof feature_flags.da}`;
+                    }
+                    if (typeof feature_flags.exp !== "boolean") {
+                        throw `exp feature flag is not boolean: ${typeof feature_flags.exp}`;
+                    }
+                    if (typeof feature_flags.page !== "boolean") {
+                        throw `page feature flag is not boolean: ${typeof feature_flags.page}`;
+                    }
+                    if (typeof feature_flags.ui !== "boolean") {
+                        throw `ui feature flag is not boolean: ${typeof feature_flags.ui}`;
+                    }
+    
+                    collectorConfig = {
+                        run: runCollector,
+                        featureFlags: jsonConfig.collection.feature_flags
+                    };
+
+                } else {
+
+                    collectorConfig = {
+                        run: runCollector,
+                    };
+                    
+                }
+            
+            } catch (e) {
+
+                let msg = `${functionName} error caught. e:${e}`;
+                this.log(msg);
+                this.addError(msg);
+
+            } finally {
+
+                if (collectorConfig == null) {
+                    collectorConfig = {
+                        run: true,
+                        featureFlags: {
+                            app: true,
+                            battery: true,
+                            browser: true,
+                            da: false,
+                            exp: true,
+                            page: true,
+                            ui: true
+                        }
+                    }
+                };
+
+                this.log(`${functionName} end...`);
+                return collectorConfig;    
+            }
+
+        },
+
+        _translateDAConfig(jsonConfig) {
+
+            const functionName = "_translateDAConfig";
+
+            let daConfig = null
+
+            try {
+
+                this.log(`${functionName} start...`);
+
+                if (jsonConfig.da) {
+
+                    if (!jsonConfig.da.orgId) {
+                        throw `da.orgId missing.`;
+                    }
+    
+                    if (!jsonConfig.da.subdomain) {
+                        throw `da.subdomain missing.`;
+                    }
+    
+                    daConfig = {
+                        enabled: true,
+                        orgId: jsonConfig.da.orgId,
+                        subdomain: jsonConfig.da.subdomain
+                    };
+                    
+                } else {
+
+                    daConfig = {
+                        enabled: false
+                    };
+                    
+                    this.log(`${functionName} da disabled.`);
+
+                }
+
+            } catch (e) {
+
+                let msg = `${functionName} ${e}`;
+                this.log(msg);
+
+            } finally {
+
+                if (daConfig == null) {
+                    daConfig = {
+                        enabled: false
+                    };
+                }
+
+                this.log(`${functionName} end...`);
+                return daConfig    
+            }
+
+        },
+
+        _getHostname(config) {
+            let configuredHostname = config.hostname;
+            if (typeof configuredHostname !== 'undefined') {
+                if (this._isHostnameValid(configuredHostname)) {
+                    let configuredEnvironment = config.environment;
+                    if (configuredEnvironment){
+                        this.log(`warning:both 'environment':${configuredEnvironment} and deprecated 'hostname':${configuredHostname} configs were specified. using hostname.`);
+                    }
+                    return configuredHostname;
+                }
+                this.log(`invalid configuredHostname:${configuredHostname}`);
+                return null;
+            }
+
+            let configuredEnvironment = config.environment;
+            if (configuredEnvironment){
+                configuredEnvironment = configuredEnvironment.toUpperCase();
+            }
+            switch (configuredEnvironment) {
+                case 'TEST':
+                    return "tst.kaptcha.com";
+                case 'PROD':
+                    return "ssl.kaptcha.com";
+                default:
+                    this.log(`invalid configuredEnvironment:${configuredEnvironment}`);
+                    return null;
+            };
+        },
+
+        _isHostnameValid(hostname) {
             if (typeof hostname !== 'string') {
                 this.log(`Invalid hostname: not a string: ${typeof hostname}`);
                 return false;
@@ -614,6 +812,45 @@ export default function kountSDK(config, sessionID) {
                 
             } catch (e) {
                 this.addError(`${functionName} error:${e}`);
+            } finally {
+                this.log(`${functionName} ending...`);
+            }
+        },
+
+        _runDA(triggers, subdomain, orgId) {
+            const functionName = '_runDA';
+
+            try {
+                this.log(`${functionName} running...`);
+
+                this.log(`${functionName} setting da session store`);
+                var daScript = document.createElement('script');  
+
+                let daUrl = 'https://' + subdomain + '.callsign.com'
+                daScript.setAttribute('src',daUrl + '/in/web-sdk/v1/static/web-sdk.js');
+                document.head.appendChild(daScript);
+
+                const daConfig = {
+                    essx: daUrl,
+                    esto: orgId,
+                    ggow: sessionID,
+                    mosc: sessionID,
+                    mwel: "Kount",
+                    mwelseq: 1,
+                    mwelsub: "Kount",
+                    loco: false,
+                    ewps: false,
+                    reed: true,
+                    sanf:  JSON.stringify(triggers),
+                    timestamp: Date.now()
+                };
+
+                this.log(`${functionName} daConfig:${JSON.stringify(daConfig)}`)
+
+                sessionStorage.setItem('cx', JSON.stringify( daConfig ));                
+                this.log(`${functionName} da session store set`);
+            } catch(e) {
+                this.log(`${functionName} unexpected da error: ${e}`);
             } finally {
                 this.log(`${functionName} ending...`);
             }

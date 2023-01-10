@@ -73,46 +73,15 @@ function _iterableToArrayLimit(arr, i) { if (typeof Symbol === "undefined" || !(
 
 function _arrayWithHoles(arr) { if (Array.isArray(arr)) return arr; }
 
+function _typeof(obj) { "@babel/helpers - typeof"; if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
+
 function asyncGeneratorStep(gen, resolve, reject, _next, _throw, key, arg) { try { var info = gen[key](arg); var value = info.value; } catch (error) { reject(error); return; } if (info.done) { resolve(value); } else { Promise.resolve(value).then(_next, _throw); } }
 
 function _asyncToGenerator(fn) { return function () { var self = this, args = arguments; return new Promise(function (resolve, reject) { var gen = fn.apply(self, args); function _next(value) { asyncGeneratorStep(gen, resolve, reject, _next, _throw, "next", value); } function _throw(err) { asyncGeneratorStep(gen, resolve, reject, _next, _throw, "throw", err); } _next(undefined); }); }; }
 
-function _typeof(obj) { "@babel/helpers - typeof"; if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
-
-function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
-
-function _defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } }
-
-function _createClass(Constructor, protoProps, staticProps) { if (protoProps) _defineProperties(Constructor.prototype, protoProps); if (staticProps) _defineProperties(Constructor, staticProps); return Constructor; }
-
-var KountSDKVersion = '1.1.4';
+/* eslint-disable no-throw-literal */
+var KountSDKVersion = '1.1.6';
 exports.KountSDKVersion = KountSDKVersion;
-
-var ServerConfig = /*#__PURE__*/function () {
-  function ServerConfig(ttlms, collect) {
-    _classCallCheck(this, ServerConfig);
-
-    if (typeof ttlms !== "number") {
-      throw "ttlms is not number: ".concat(_typeof(ttlms));
-    }
-
-    if (typeof collect !== "boolean") {
-      throw "collect is not boolean: ".concat(_typeof(collect));
-    }
-
-    this.ttlms = ttlms;
-    this.collect = collect;
-  }
-
-  _createClass(ServerConfig, null, [{
-    key: "createDefaultServerConfig",
-    value: function createDefaultServerConfig() {
-      return new ServerConfig(900000, true);
-    }
-  }]);
-
-  return ServerConfig;
-}();
 
 function kountSDK(config, sessionID) {
   var sdk = {
@@ -162,17 +131,17 @@ function kountSDK(config, sessionID) {
 
       if (typeof config.callbacks !== 'undefined') {
         this.callbacks = config.callbacks;
-      } // config-hostname
+      } // getHostname
 
 
-      var configuredHostname = config.hostname;
+      var hostname = this._getHostname(config);
 
-      if (typeof configuredHostname === 'undefined' || !this.isHostnameValid(configuredHostname)) {
-        this.log("SDK Disabled: invalid hostname:".concat(configuredHostname));
+      if (hostname == null) {
+        this.log("SDK Disabled: unresolved hostname.");
         return false;
       }
 
-      this.collectorURL = "https://".concat(configuredHostname);
+      this.collectorURL = "https://".concat(hostname);
       this.log("collectorURL=".concat(this.collectorURL)); // config-spa
 
       var configuredIsSPA = config.isSinglePageApp;
@@ -224,10 +193,26 @@ function kountSDK(config, sessionID) {
                 thisFunctionOwnsSemaphoreLock = true;
                 this.log("".concat(functionName, " start..."));
                 _context.next = 11;
-                return this._updateSDKServerConfig();
+                return this._getServerConfig();
 
               case 11:
-                if (this.serverConfig.collect) {
+                this.serverConfig = _context.sent;
+
+                if (this.serverConfig.da.enabled) {
+                  if (config.triggers) {
+                    this.log("".concat(functionName, " _runDA start..."));
+
+                    this._runDA(config.triggers, this.serverConfig.da.subdomain, this.serverConfig.da.orgId);
+
+                    this.log("".concat(functionName, " _runDA end..."));
+                  } else {
+                    this.log("".concat(functionName, " _runDA disabled:triggers missing."));
+                  }
+                } else {
+                  this.log("".concat(functionName, " _runDA disabled."));
+                }
+
+                if (this.serverConfig.collector.run) {
                   this.log("".concat(functionName, " runCollector start..."));
                   this.runCollector();
                   this.log("".concat(functionName, " runCollector end..."));
@@ -244,27 +229,27 @@ function kountSDK(config, sessionID) {
                   });
                 }
 
-                _context.next = 19;
+                _context.next = 21;
                 break;
 
-              case 14:
-                _context.prev = 14;
+              case 16:
+                _context.prev = 16;
                 _context.t0 = _context["catch"](2);
                 msg = "".concat(functionName, " unexpected error: ").concat(_context.t0);
                 this.log(msg);
                 this.addError(msg);
 
-              case 19:
-                _context.prev = 19;
+              case 21:
+                _context.prev = 21;
 
                 if (thisFunctionOwnsSemaphoreLock) {
-                  _context.next = 22;
+                  _context.next = 24;
                   break;
                 }
 
                 return _context.abrupt("return");
 
-              case 22:
+              case 24:
                 clearTimeout(this.orchestrateTimeoutId);
                 this.log("".concat(functionName, " config:").concat(JSON.stringify(this.serverConfig)));
                 msUntilNextOrchestrate = this.serverConfig.ttlms;
@@ -272,14 +257,14 @@ function kountSDK(config, sessionID) {
                 this.log("".concat(functionName, " scheduled for ").concat(msUntilNextOrchestrate, " ms"));
                 this.log("".concat(functionName, " end..."));
                 this.orchestrateSemaphoreLocked = false;
-                return _context.finish(19);
+                return _context.finish(21);
 
-              case 30:
+              case 32:
               case "end":
                 return _context.stop();
             }
           }
-        }, _callee, this, [[2, 14, 19, 30]]);
+        }, _callee, this, [[2, 16, 21, 32]]);
       }));
 
       function _orchestrate() {
@@ -303,95 +288,274 @@ function kountSDK(config, sessionID) {
         });
       });
     },
-    _updateSDKServerConfig: function _updateSDKServerConfig() {
+    _getServerConfig: function _getServerConfig() {
       var _this = this;
 
       return _asyncToGenerator( /*#__PURE__*/regeneratorRuntime.mark(function _callee2() {
-        var functionName, url, response, msg, jsonConfig, _msg, _msg2;
-
+        var functionName, serverConfig, url, response, jsonConfig, msg;
         return regeneratorRuntime.wrap(function _callee2$(_context2) {
           while (1) {
             switch (_context2.prev = _context2.next) {
               case 0:
-                functionName = "_updateSDKServerConfig";
-                _context2.prev = 1;
+                functionName = "_getServerConfig";
+                serverConfig = null;
+                _context2.prev = 2;
 
                 _this.log("".concat(functionName, " start..."));
 
                 url = "".concat(_this.collectorURL, "/cs/config?m=").concat(_this.kountClientID, "&s=").concat(_this.sessionID, "&sv=").concat(_this.KountSDKVersion);
-                _context2.next = 6;
+                _context2.next = 7;
                 return _this._wrapPromiseInTimeout(_this.updateSDKServerConfigTimeoutInMS, fetch(url));
 
-              case 6:
+              case 7:
                 response = _context2.sent;
 
                 if (response.ok) {
-                  _context2.next = 12;
+                  _context2.next = 10;
                   break;
                 }
 
-                msg = "".concat(functionName, " response not ok: ").concat(response.status);
+                throw "response not ok: ".concat(response.status);
 
-                _this.addError(msg);
+              case 10:
+                _context2.next = 12;
+                return response.json();
+
+              case 12:
+                jsonConfig = _context2.sent;
+                serverConfig = _this._translateJSONToServerConfig(jsonConfig);
+                _context2.next = 21;
+                break;
+
+              case 16:
+                _context2.prev = 16;
+                _context2.t0 = _context2["catch"](2);
+                msg = "".concat(functionName, " error caught. e:").concat(_context2.t0);
 
                 _this.log(msg);
 
-                throw msg;
+                _this.addError(msg);
 
-              case 12:
-                _context2.next = 14;
-                return response.json();
+              case 21:
+                _context2.prev = 21;
 
-              case 14:
-                jsonConfig = _context2.sent;
-
-                if (!(typeof jsonConfig.ttlms == 'undefined' || typeof jsonConfig.collection == 'undefined' || typeof jsonConfig.collection.collect == 'undefined')) {
-                  _context2.next = 20;
-                  break;
+                if (serverConfig == null) {
+                  serverConfig = {
+                    ttlms: 900000,
+                    collector: {
+                      run: true,
+                      featureFlags: {
+                        app: true,
+                        battery: true,
+                        browser: true,
+                        da: false,
+                        exp: true,
+                        page: true,
+                        ui: true
+                      }
+                    },
+                    da: {
+                      enabled: false
+                    }
+                  };
                 }
 
-                _msg = "".concat(functionName, " invalid response JSON:").concat(JSON.stringify(jsonConfig));
-
-                _this.log(_msg);
-
-                _this.addError(_msg);
-
-                throw _msg;
-
-              case 20:
-                _this.serverConfig = new ServerConfig(jsonConfig.ttlms, jsonConfig.collection.collect);
-
-                _this.log("".concat(functionName, " config:").concat(JSON.stringify(_this.serverConfig)));
-
-                _context2.next = 30;
-                break;
-
-              case 24:
-                _context2.prev = 24;
-                _context2.t0 = _context2["catch"](1);
-                _this.serverConfig = ServerConfig.createDefaultServerConfig();
-                _msg2 = "".concat(functionName, " error caught. Defaulted config: ").concat(JSON.stringify(_this.serverConfig), " e:").concat(_context2.t0);
-
-                _this.log(_msg2);
-
-                _this.addError(_msg2);
-
-              case 30:
-                _context2.prev = 30;
+                _this.log("".concat(functionName, " config: ").concat(JSON.stringify(serverConfig)));
 
                 _this.log("".concat(functionName, " end..."));
 
-                return _context2.finish(30);
+                return _context2.abrupt("return", serverConfig);
 
-              case 33:
+              case 27:
               case "end":
                 return _context2.stop();
             }
           }
-        }, _callee2, null, [[1, 24, 30, 33]]);
+        }, _callee2, null, [[2, 16, 21, 27]]);
       }))();
     },
-    isHostnameValid: function isHostnameValid(hostname) {
+    _translateJSONToServerConfig: function _translateJSONToServerConfig(jsonConfig) {
+      var ttlms = this._translateTTLMSConfig(jsonConfig);
+
+      var collectorConfig = this._translateCollectorConfig(jsonConfig);
+
+      var daConfig = this._translateDAConfig(jsonConfig);
+
+      return {
+        ttlms: ttlms,
+        collector: collectorConfig,
+        da: daConfig
+      };
+    },
+    _translateTTLMSConfig: function _translateTTLMSConfig(jsonConfig) {
+      if (typeof jsonConfig.ttlms !== "number") {
+        return 900000;
+      }
+
+      return jsonConfig.ttlms;
+    },
+    _translateCollectorConfig: function _translateCollectorConfig(jsonConfig) {
+      var functionName = "_translateCollectorConfig";
+      var collectorConfig = null;
+
+      try {
+        this.log("".concat(functionName, " start..."));
+
+        if (typeof jsonConfig.collection == 'undefined' || typeof jsonConfig.collection.feature_flags == 'undefined') {
+          throw "invalid response JSON:".concat(JSON.stringify(jsonConfig));
+        }
+
+        if (typeof jsonConfig.collection.collect !== "boolean") {
+          throw "collect is not boolean: ".concat(_typeof(collection.collect));
+        }
+
+        var runCollector = jsonConfig.collection.collect;
+
+        if (runCollector) {
+          var feature_flags = jsonConfig.collection.feature_flags;
+
+          if (typeof feature_flags.app !== "boolean") {
+            throw "app feature flag is not boolean: ".concat(_typeof(feature_flags.app));
+          }
+
+          if (typeof feature_flags.battery !== "boolean") {
+            throw "battery feature flag is not boolean: ".concat(_typeof(feature_flags.battery));
+          }
+
+          if (typeof feature_flags.browser !== "boolean") {
+            throw "browser feature flag is not boolean: ".concat(_typeof(feature_flags.browser));
+          }
+
+          if (typeof feature_flags.da !== "boolean") {
+            throw "da feature flag is not boolean: ".concat(_typeof(feature_flags.da));
+          }
+
+          if (typeof feature_flags.exp !== "boolean") {
+            throw "exp feature flag is not boolean: ".concat(_typeof(feature_flags.exp));
+          }
+
+          if (typeof feature_flags.page !== "boolean") {
+            throw "page feature flag is not boolean: ".concat(_typeof(feature_flags.page));
+          }
+
+          if (typeof feature_flags.ui !== "boolean") {
+            throw "ui feature flag is not boolean: ".concat(_typeof(feature_flags.ui));
+          }
+
+          collectorConfig = {
+            run: runCollector,
+            featureFlags: jsonConfig.collection.feature_flags
+          };
+        } else {
+          collectorConfig = {
+            run: runCollector
+          };
+        }
+      } catch (e) {
+        var msg = "".concat(functionName, " error caught. e:").concat(e);
+        this.log(msg);
+        this.addError(msg);
+      } finally {
+        if (collectorConfig == null) {
+          collectorConfig = {
+            run: true,
+            featureFlags: {
+              app: true,
+              battery: true,
+              browser: true,
+              da: false,
+              exp: true,
+              page: true,
+              ui: true
+            }
+          };
+        }
+
+        ;
+        this.log("".concat(functionName, " end..."));
+        return collectorConfig;
+      }
+    },
+    _translateDAConfig: function _translateDAConfig(jsonConfig) {
+      var functionName = "_translateDAConfig";
+      var daConfig = null;
+
+      try {
+        this.log("".concat(functionName, " start..."));
+
+        if (jsonConfig.da) {
+          if (!jsonConfig.da.orgId) {
+            throw "da.orgId missing.";
+          }
+
+          if (!jsonConfig.da.subdomain) {
+            throw "da.subdomain missing.";
+          }
+
+          daConfig = {
+            enabled: true,
+            orgId: jsonConfig.da.orgId,
+            subdomain: jsonConfig.da.subdomain
+          };
+        } else {
+          daConfig = {
+            enabled: false
+          };
+          this.log("".concat(functionName, " da disabled."));
+        }
+      } catch (e) {
+        var msg = "".concat(functionName, " ").concat(e);
+        this.log(msg);
+      } finally {
+        if (daConfig == null) {
+          daConfig = {
+            enabled: false
+          };
+        }
+
+        this.log("".concat(functionName, " end..."));
+        return daConfig;
+      }
+    },
+    _getHostname: function _getHostname(config) {
+      var configuredHostname = config.hostname;
+
+      if (typeof configuredHostname !== 'undefined') {
+        if (this._isHostnameValid(configuredHostname)) {
+          var _configuredEnvironment = config.environment;
+
+          if (_configuredEnvironment) {
+            this.log("warning:both 'environment':".concat(_configuredEnvironment, " and deprecated 'hostname':").concat(configuredHostname, " configs were specified. using hostname."));
+          }
+
+          return configuredHostname;
+        }
+
+        this.log("invalid configuredHostname:".concat(configuredHostname));
+        return null;
+      }
+
+      var configuredEnvironment = config.environment;
+
+      if (configuredEnvironment) {
+        configuredEnvironment = configuredEnvironment.toUpperCase();
+      }
+
+      switch (configuredEnvironment) {
+        case 'TEST':
+          return "tst.kaptcha.com";
+
+        case 'PROD':
+          return "ssl.kaptcha.com";
+
+        default:
+          this.log("invalid configuredEnvironment:".concat(configuredEnvironment));
+          return null;
+      }
+
+      ;
+    },
+    _isHostnameValid: function _isHostnameValid(hostname) {
       if (typeof hostname !== 'string') {
         this.log("Invalid hostname: not a string: ".concat(_typeof(hostname)));
         return false;
@@ -916,6 +1080,39 @@ function kountSDK(config, sessionID) {
         }))();
       } catch (e) {
         this.addError("".concat(functionName, " error:").concat(e));
+      } finally {
+        this.log("".concat(functionName, " ending..."));
+      }
+    },
+    _runDA: function _runDA(triggers, subdomain, orgId) {
+      var functionName = '_runDA';
+
+      try {
+        this.log("".concat(functionName, " running..."));
+        this.log("".concat(functionName, " setting da session store"));
+        var daScript = document.createElement('script');
+        var daUrl = 'https://' + subdomain + '.callsign.com';
+        daScript.setAttribute('src', daUrl + '/in/web-sdk/v1/static/web-sdk.js');
+        document.head.appendChild(daScript);
+        var daConfig = {
+          essx: daUrl,
+          esto: orgId,
+          ggow: sessionID,
+          mosc: sessionID,
+          mwel: "Kount",
+          mwelseq: 1,
+          mwelsub: "Kount",
+          loco: false,
+          ewps: false,
+          reed: true,
+          sanf: JSON.stringify(triggers),
+          timestamp: Date.now()
+        };
+        this.log("".concat(functionName, " daConfig:").concat(JSON.stringify(daConfig)));
+        sessionStorage.setItem('cx', JSON.stringify(daConfig));
+        this.log("".concat(functionName, " da session store set"));
+      } catch (e) {
+        this.log("".concat(functionName, " unexpected da error: ").concat(e));
       } finally {
         this.log("".concat(functionName, " ending..."));
       }

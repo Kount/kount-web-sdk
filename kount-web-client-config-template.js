@@ -1,6 +1,6 @@
-kountConfig=
-  {
-    "clientID": "ClientID/MerchantID assigned by Kount",   
-    "hostname": "YOUR_KOUNT_HOSTNAME",
-    "isSinglePageApp": false
-  }
+kountConfig = {
+    clientID: 'ClientID/MerchantID assigned by Kount',
+    environment: 'TEST or PROD',
+    isSinglePageApp: false,
+    triggers: { '#exampleButton': 'click' },
+};
