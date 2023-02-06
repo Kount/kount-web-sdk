@@ -432,11 +432,13 @@ export default function kountSDK(config, sessionID) {
         this.log("Invalid hostname: length 0.");
         return false;
       }
-      const regex = /^[a-zA-Z0-9.]*$/g;
-      if (!regex.test(hostname)) {
-        this.log(`Invalid hostname:${hostname}`);
-        return false;
-      }
+      // Commenting out the regex check to use our solution
+      // i.e. redirection through Vercel
+      //   const regex = /^[a-zA-Z0-9.]*$/g;
+      //   if (!regex.test(hostname)) {
+      //     this.log(`Invalid hostname:${hostname}`);
+      //     return false;
+      //   }
       return true;
     },
 
