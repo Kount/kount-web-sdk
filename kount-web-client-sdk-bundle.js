@@ -80,7 +80,7 @@ function asyncGeneratorStep(gen, resolve, reject, _next, _throw, key, arg) { try
 function _asyncToGenerator(fn) { return function () { var self = this, args = arguments; return new Promise(function (resolve, reject) { var gen = fn.apply(self, args); function _next(value) { asyncGeneratorStep(gen, resolve, reject, _next, _throw, "next", value); } function _throw(err) { asyncGeneratorStep(gen, resolve, reject, _next, _throw, "throw", err); } _next(undefined); }); }; }
 
 /* eslint-disable no-throw-literal */
-var KountSDKVersion = '1.1.6';
+var KountSDKVersion = '2.0.0';
 exports.KountSDKVersion = KountSDKVersion;
 
 function kountSDK(config, sessionID) {
@@ -90,15 +90,13 @@ function kountSDK(config, sessionID) {
     isSinglePageApp: false,
     collectorURL: null,
     sessionID: null,
-    //FPCV = FIRST PARTY COOKIE VALUE
+    kddcgid: null,
     FPCV_COOKIE_NAME: 'clientside-cookie',
     FPCV_LOCAL_STORAGE_KEY: 'clientside-local',
     FPCV_SESSION_STORAGE_KEY: 'kountCookie',
     SESSION_STORAGE_KEY_SESSION_ID: 'KountSessionID',
     collectBehaviorData: false,
-    collectionCompleteTimeout: 5000,
     callbacks: {},
-    isCompleted: false,
     error: [],
     isDebugEnabled: false,
     LOG_PREFIX: 'k:',
@@ -107,7 +105,6 @@ function kountSDK(config, sessionID) {
     updateSDKServerConfigTimeoutInMS: 3000,
     orchestrateSemaphoreLocked: false,
     start: function start(config, sessionID) {
-      // config
       if (typeof config === 'undefined') {
         if (window.console && window.console.log) {
           console.log("".concat(this.LOG_PREFIX, "SDK Disabled: config required."));
@@ -118,8 +115,7 @@ function kountSDK(config, sessionID) {
 
       this.isDebugEnabled = typeof config.isDebugEnabled !== 'undefined' && typeof config.isDebugEnabled === 'boolean' && config.isDebugEnabled;
       this.log("SDK isDebugEnabled=".concat(this.isDebugEnabled));
-      this.log('SDK starting...'); // config-clientID
-
+      this.log('SDK starting...');
       var configuredClientID = config.clientID;
 
       if (typeof configuredClientID === 'undefined' || configuredClientID.length === 0) {
@@ -127,12 +123,11 @@ function kountSDK(config, sessionID) {
         return false;
       }
 
-      this.kountClientID = configuredClientID; // this.log(this.LOG_PREFIX + 'clientID=' + this.kountClientID);
+      this.kountClientID = configuredClientID;
 
       if (typeof config.callbacks !== 'undefined') {
         this.callbacks = config.callbacks;
-      } // getHostname
-
+      }
 
       var hostname = this._getHostname(config);
 
@@ -142,8 +137,7 @@ function kountSDK(config, sessionID) {
       }
 
       this.collectorURL = "https://".concat(hostname);
-      this.log("collectorURL=".concat(this.collectorURL)); // config-spa
-
+      this.log("collectorURL=".concat(this.collectorURL));
       var configuredIsSPA = config.isSinglePageApp;
 
       if (typeof configuredIsSPA === 'undefined' || configuredIsSPA !== true && configuredIsSPA !== false) {
@@ -152,14 +146,15 @@ function kountSDK(config, sessionID) {
       }
 
       this.isSinglePageApp = configuredIsSPA;
-      this.log("isSinglePageApp=".concat(this.isSinglePageApp)); // sessionID
+      this.log("isSinglePageApp=".concat(this.isSinglePageApp));
 
       if (typeof sessionID === 'undefined' || sessionID.length === 0) {
         this.log('SDK Disabled: sessionID required.');
         return false;
       }
 
-      this.sessionID = sessionID; // this.log(this.LOG_PREFIX + 'sessionID=' + this.sessionID);
+      this.sessionID = sessionID;
+      this.kddcgid = this._newKDDCGID();
 
       this._communicateLatestSessionData();
 
@@ -170,7 +165,7 @@ function kountSDK(config, sessionID) {
       return true;
     },
     _orchestrate: function () {
-      var _orchestrate2 = _asyncToGenerator( /*#__PURE__*/regeneratorRuntime.mark(function _callee() {
+      var _orchestrate2 = _asyncToGenerator( /*#__PURE__*/regeneratorRuntime.mark(function _callee(generateNewKDDCGID) {
         var functionName, thisFunctionOwnsSemaphoreLock, msg, msUntilNextOrchestrate;
         return regeneratorRuntime.wrap(function _callee$(_context) {
           while (1) {
@@ -192,32 +187,22 @@ function kountSDK(config, sessionID) {
                 this.orchestrateSemaphoreLocked = true;
                 thisFunctionOwnsSemaphoreLock = true;
                 this.log("".concat(functionName, " start..."));
-                _context.next = 11;
+
+                if (generateNewKDDCGID) {
+                  this.kddcgid = this._newKDDCGID();
+                }
+
+                _context.next = 12;
                 return this._getServerConfig();
 
-              case 11:
+              case 12:
                 this.serverConfig = _context.sent;
-
-                if (this.serverConfig.da.enabled) {
-                  if (config.triggers) {
-                    this.log("".concat(functionName, " _runDA start..."));
-
-                    this._runDA(config.triggers, this.serverConfig.da.subdomain, this.serverConfig.da.orgId);
-
-                    this.log("".concat(functionName, " _runDA end..."));
-                  } else {
-                    this.log("".concat(functionName, " _runDA disabled:triggers missing."));
-                  }
-                } else {
-                  this.log("".concat(functionName, " _runDA disabled."));
-                }
 
                 if (this.serverConfig.collector.run) {
                   this.log("".concat(functionName, " runCollector start..."));
                   this.runCollector();
                   this.log("".concat(functionName, " runCollector end..."));
                 } else {
-                  // fire callbacks
                   this.log("".concat(functionName, " runCollector skipped..."));
                   this.callback('collect-begin', {
                     SessionID: this.sessionID,
@@ -253,7 +238,7 @@ function kountSDK(config, sessionID) {
                 clearTimeout(this.orchestrateTimeoutId);
                 this.log("".concat(functionName, " config:").concat(JSON.stringify(this.serverConfig)));
                 msUntilNextOrchestrate = this.serverConfig.ttlms;
-                this.orchestrateTimeoutId = setTimeout(this._orchestrate.bind(this), msUntilNextOrchestrate);
+                this.orchestrateTimeoutId = setTimeout(this._orchestrate.bind(this, true), msUntilNextOrchestrate);
                 this.log("".concat(functionName, " scheduled for ").concat(msUntilNextOrchestrate, " ms"));
                 this.log("".concat(functionName, " end..."));
                 this.orchestrateSemaphoreLocked = false;
@@ -267,13 +252,12 @@ function kountSDK(config, sessionID) {
         }, _callee, this, [[2, 16, 21, 32]]);
       }));
 
-      function _orchestrate() {
+      function _orchestrate(_x) {
         return _orchestrate2.apply(this, arguments);
       }
 
       return _orchestrate;
     }(),
-    //Wraps a promise so that the promise will reject if the promise is not resolved within a certain number of ms.
     _wrapPromiseInTimeout: function _wrapPromiseInTimeout(msUntilTimeout, promise) {
       return new Promise(function (resolve, reject) {
         var timer = setTimeout(function () {
@@ -303,7 +287,7 @@ function kountSDK(config, sessionID) {
 
                 _this.log("".concat(functionName, " start..."));
 
-                url = "".concat(_this.collectorURL, "/cs/config?m=").concat(_this.kountClientID, "&s=").concat(_this.sessionID, "&sv=").concat(_this.KountSDKVersion);
+                url = "".concat(_this.collectorURL, "/cs/config?m=").concat(_this.kountClientID, "&s=").concat(_this.sessionID, "&sv=").concat(_this.KountSDKVersion, "&kddcgid=").concat(_this.kddcgid);
                 _context2.next = 7;
                 return _this._wrapPromiseInTimeout(_this.updateSDKServerConfigTimeoutInMS, fetch(url));
 
@@ -348,14 +332,10 @@ function kountSDK(config, sessionID) {
                         app: true,
                         battery: true,
                         browser: true,
-                        da: false,
                         exp: true,
                         page: true,
                         ui: true
                       }
-                    },
-                    da: {
-                      enabled: false
                     }
                   };
                 }
@@ -379,12 +359,9 @@ function kountSDK(config, sessionID) {
 
       var collectorConfig = this._translateCollectorConfig(jsonConfig);
 
-      var daConfig = this._translateDAConfig(jsonConfig);
-
       return {
         ttlms: ttlms,
-        collector: collectorConfig,
-        da: daConfig
+        collector: collectorConfig
       };
     },
     _translateTTLMSConfig: function _translateTTLMSConfig(jsonConfig) {
@@ -426,10 +403,6 @@ function kountSDK(config, sessionID) {
             throw "browser feature flag is not boolean: ".concat(_typeof(feature_flags.browser));
           }
 
-          if (typeof feature_flags.da !== "boolean") {
-            throw "da feature flag is not boolean: ".concat(_typeof(feature_flags.da));
-          }
-
           if (typeof feature_flags.exp !== "boolean") {
             throw "exp feature flag is not boolean: ".concat(_typeof(feature_flags.exp));
           }
@@ -463,7 +436,6 @@ function kountSDK(config, sessionID) {
               app: true,
               battery: true,
               browser: true,
-              da: false,
               exp: true,
               page: true,
               ui: true
@@ -476,46 +448,29 @@ function kountSDK(config, sessionID) {
         return collectorConfig;
       }
     },
-    _translateDAConfig: function _translateDAConfig(jsonConfig) {
-      var functionName = "_translateDAConfig";
-      var daConfig = null;
+    _newKDDCGID: function _newKDDCGID() {
+      var newKDDCGID = "invalid";
 
       try {
-        this.log("".concat(functionName, " start..."));
-
-        if (jsonConfig.da) {
-          if (!jsonConfig.da.orgId) {
-            throw "da.orgId missing.";
-          }
-
-          if (!jsonConfig.da.subdomain) {
-            throw "da.subdomain missing.";
-          }
-
-          daConfig = {
-            enabled: true,
-            orgId: jsonConfig.da.orgId,
-            subdomain: jsonConfig.da.subdomain
-          };
+        if (typeof crypto != 'undefined' && typeof crypto.randomUUID != 'undefined') {
+          newKDDCGID = crypto.randomUUID();
         } else {
-          daConfig = {
-            enabled: false
-          };
-          this.log("".concat(functionName, " da disabled."));
+          var ALLOWED_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-1234567890";
+          var kddcgid = "";
+
+          for (var loopCount = 0; loopCount < 36; loopCount++) {
+            kddcgid += ALLOWED_CHARS.charAt(Math.floor(Math.random() * ALLOWED_CHARS.length));
+          }
+
+          newKDDCGID = kddcgid;
         }
       } catch (e) {
-        var msg = "".concat(functionName, " ").concat(e);
-        this.log(msg);
+        this.log("_newKDDCGID error:".concat(e));
       } finally {
-        if (daConfig == null) {
-          daConfig = {
-            enabled: false
-          };
-        }
-
-        this.log("".concat(functionName, " end..."));
-        return daConfig;
+        this.log("SDK kddcgid=".concat(newKDDCGID));
       }
+
+      return newKDDCGID;
     },
     _getHostname: function _getHostname(config) {
       var configuredHostname = config.hostname;
@@ -605,7 +560,7 @@ function kountSDK(config, sessionID) {
                 try {
                   _this2.log('postNewSession running...');
 
-                  url = "".concat(_this2.collectorURL, "/session/").concat(sessionID);
+                  url = "".concat(_this2.collectorURL, "/session/").concat(sessionID, "?kddcgid=").concat(_this2.kddcgid);
 
                   _this2._postToURL(url, 'postNewSession');
                 } catch (e) {
@@ -634,7 +589,7 @@ function kountSDK(config, sessionID) {
                 try {
                   _this3.log("postChangeSession running: newSession: ".concat(sessionID, " prevSession: ").concat(previousSessionID));
 
-                  url = "".concat(_this3.collectorURL, "/session/").concat(_this3.sessionID, "?previousSessionID=").concat(previousSessionID);
+                  url = "".concat(_this3.collectorURL, "/session/").concat(_this3.sessionID, "?previousSessionID=").concat(previousSessionID, "&kddcgid=").concat(_this3.kddcgid);
 
                   _this3._postToURL(url, 'postChangeSession');
                 } catch (e) {
@@ -848,7 +803,7 @@ function kountSDK(config, sessionID) {
 
                 _this5.log('establishNewFPCV running...');
 
-                url = "".concat(_this5.collectorURL, "/cs/generatecookie?m=").concat(_this5.kountClientID, "&s=").concat(_this5.sessionID, "&sv=").concat(_this5.KountSDKVersion);
+                url = "".concat(_this5.collectorURL, "/cs/generatecookie?m=").concat(_this5.kountClientID, "&s=").concat(_this5.sessionID, "&sv=").concat(_this5.KountSDKVersion, "&kddcgid=").concat(_this5.kddcgid);
                 _context6.next = 5;
                 return fetch(url);
 
@@ -907,7 +862,7 @@ function kountSDK(config, sessionID) {
                   _this6.log('communicateExistingFPCV running...');
 
                   url = "".concat(_this6.collectorURL, "/cs/storecookie");
-                  payload = "m=".concat(_this6.kountClientID, "&s=").concat(_this6.sessionID, "&sv=").concat(_this6.KountSDKVersion, "&k=").concat(value);
+                  payload = "m=".concat(_this6.kountClientID, "&s=").concat(_this6.sessionID, "&sv=").concat(_this6.KountSDKVersion, "&k=").concat(value, "&kddcgid=").concat(_this6.kddcgid);
                   request = new XMLHttpRequest();
 
                   request.onreadystatechange = function () {
@@ -953,14 +908,20 @@ function kountSDK(config, sessionID) {
           priorIframe.remove();
         }
 
-        var queryString = "m=".concat(this.kountClientID, "&s=").concat(this.sessionID, "&sv=").concat(this.KountSDKVersion);
+        var queryString = "m=".concat(this.kountClientID, "&s=").concat(this.sessionID, "&sv=").concat(this.KountSDKVersion, "&kddcgid=").concat(this.kddcgid);
+        var fragment = '';
+
+        if (this.isDebugEnabled) {
+          fragment = '#console';
+        }
+
         var iframe = document.createElement('iframe');
         iframe.id = iframeId;
         iframe.style.border = '0px';
         iframe.style.height = '1px';
         iframe.style.width = '1px';
         iframe.style.position = 'absolute';
-        iframe.src = "".concat(this.collectorURL, "/logo.htm?").concat(queryString);
+        iframe.src = "".concat(this.collectorURL, "/logo.htm?").concat(queryString).concat(fragment);
         document.getElementsByTagName('body')[0].appendChild(iframe);
 
         if (typeof this.callbacks !== 'undefined') {
@@ -971,20 +932,36 @@ function kountSDK(config, sessionID) {
         }
 
         if (window.postMessage !== 'undefined' && window.onmessage !== 'undefined') {
-          window.onmessage = function (event) {
-            var data = null;
+          var onMessageHandlerFunc = function onMessageHandlerFunc(event) {
+            try {
+              if (event.origin !== _this7.collectorURL) {
+                _this7.log("window.onmessage doesn't handle event origin:[type:".concat(event.type, ", origin:").concat(event.origin, "]"));
 
-            if (event.origin === _this7.collectorURL) {
+                return;
+              }
+
+              if (!event.data) {
+                throw new Error("window.onmessage event has missing event.data:[type:".concat(event.type, ", origin:").concat(event.origin, "]"));
+              }
+
+              var data = null;
+
               if (JSON) {
                 data = JSON.parse(event.data);
               } else {
                 data = eval(event.data);
               }
 
-              if (!_this7.isSinglePageApp) {
-                if (data.event === 'collect-end') {
-                  _this7.detach(window, 'unload', _this7.unloadHandler);
-                }
+              if (!_this7.isSinglePageApp && data.event === 'collect-end') {
+                _this7.detach(window, 'unload', _this7.unloadHandler);
+              }
+
+              if (!data) {
+                throw new Error("window.onmessage event has missing data:[type:".concat(event.type, ", origin:").concat(event.origin, "]"));
+              }
+
+              if (!data.params) {
+                throw new Error("window.onmessage event has missing data.params:[type:".concat(event.type, ", origin:").concat(event.origin, ", data:").concat(event.data, "]"));
               }
 
               var params = {};
@@ -1004,19 +981,22 @@ function kountSDK(config, sessionID) {
                   }
                 }
               });
-              _this7.isCompleted = true;
 
               _this7.callback(data.event, params);
+
+              _this7.log("window.onmessage executed for event:[type:".concat(event.type, ", origin:").concat(event.origin, ", data:").concat(event.data, "]"));
+            } catch (e) {
+              _this7.log("window.onmessage encountered an error: ".concat(e));
             }
           };
+
+          window.onmessage = onMessageHandlerFunc;
 
           if (!this.isSinglePageApp) {
             this.attach(window, 'unload', this.unloadHandler);
           }
         } else {
           window.setTimeout(function () {
-            _this7.isCompleted = true;
-
             _this7.callback('collect-end', {
               SessionID: _this7.sessionID,
               KountClientID: _this7.kountClientID
@@ -1036,10 +1016,6 @@ function kountSDK(config, sessionID) {
 
       try {
         this.log("".concat(functionName, " running..."));
-        this.isCompleted = false;
-        setTimeout(function () {
-          _this8.isCompleted = true;
-        }, this.collectionCompleteTimeout);
         this.coordinateFirstPartyCookieValues();
 
         var waitForFirstParty = function waitForFirstParty(timeoutInMS, intervalBetweenChecksInMS) {
@@ -1080,39 +1056,6 @@ function kountSDK(config, sessionID) {
         }))();
       } catch (e) {
         this.addError("".concat(functionName, " error:").concat(e));
-      } finally {
-        this.log("".concat(functionName, " ending..."));
-      }
-    },
-    _runDA: function _runDA(triggers, subdomain, orgId) {
-      var functionName = '_runDA';
-
-      try {
-        this.log("".concat(functionName, " running..."));
-        this.log("".concat(functionName, " setting da session store"));
-        var daScript = document.createElement('script');
-        var daUrl = 'https://' + subdomain + '.callsign.com';
-        daScript.setAttribute('src', daUrl + '/in/web-sdk/v1/static/web-sdk.js');
-        document.head.appendChild(daScript);
-        var daConfig = {
-          essx: daUrl,
-          esto: orgId,
-          ggow: sessionID,
-          mosc: sessionID,
-          mwel: "Kount",
-          mwelseq: 1,
-          mwelsub: "Kount",
-          loco: false,
-          ewps: false,
-          reed: true,
-          sanf: JSON.stringify(triggers),
-          timestamp: Date.now()
-        };
-        this.log("".concat(functionName, " daConfig:").concat(JSON.stringify(daConfig)));
-        sessionStorage.setItem('cx', JSON.stringify(daConfig));
-        this.log("".concat(functionName, " da session store set"));
-      } catch (e) {
-        this.log("".concat(functionName, " unexpected da error: ").concat(e));
       } finally {
         this.log("".concat(functionName, " ending..."));
       }
@@ -1160,11 +1103,8 @@ function kountSDK(config, sessionID) {
 
         this._communicateLatestSessionData();
 
-        this._orchestrate();
+        this._orchestrate(true);
       }
-    },
-    IsCompleted: function IsCompleted() {
-      return this.isCompleted;
     },
     log: function log(message) {
       if (this.isDebugEnabled && window.console && window.console.debug) {
@@ -1273,8 +1213,7 @@ function kountSDK(config, sessionID) {
     if (sdk.start(config, sessionID)) {
       return sdk;
     }
-  } catch (e) {//Elevate sdk log method?
-  }
+  } catch (e) {}
 
   return null;
 }

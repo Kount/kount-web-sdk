@@ -1,24 +1,22 @@
 /* eslint-disable no-throw-literal */
-export const KountSDKVersion = '1.1.6';
+export const KountSDKVersion = '2.0.0';
 
 export default function kountSDK(config, sessionID) {
-    
+
     const sdk = {
-    
+
         KountSDKVersion,
         kountClientID: null,
         isSinglePageApp: false,
         collectorURL: null,
         sessionID: null,
-        //FPCV = FIRST PARTY COOKIE VALUE
+        kddcgid: null,
         FPCV_COOKIE_NAME: 'clientside-cookie',
         FPCV_LOCAL_STORAGE_KEY: 'clientside-local',
         FPCV_SESSION_STORAGE_KEY: 'kountCookie',
         SESSION_STORAGE_KEY_SESSION_ID: 'KountSessionID',
         collectBehaviorData: false,
-        collectionCompleteTimeout: 5000,
         callbacks: {},
-        isCompleted: false,
         error: [],
         isDebugEnabled: false,
         LOG_PREFIX: 'k:',
@@ -29,7 +27,6 @@ export default function kountSDK(config, sessionID) {
 
         start(config, sessionID) {
 
-            // config
             if (typeof config === 'undefined') {
                 if (window.console && window.console.log) {
                     console.log(`${this.LOG_PREFIX}SDK Disabled: config required.`);
@@ -42,20 +39,17 @@ export default function kountSDK(config, sessionID) {
 
             this.log('SDK starting...');
 
-            // config-clientID
             const configuredClientID = config.clientID;
             if ((typeof configuredClientID === 'undefined') || (configuredClientID.length === 0)) {
                 this.log('SDK Disabled: clientID required.');
                 return false;
             }
             this.kountClientID = configuredClientID;
-            // this.log(this.LOG_PREFIX + 'clientID=' + this.kountClientID);
 
             if ((typeof config.callbacks !== 'undefined')) {
                 this.callbacks = config.callbacks;
             }
 
-            // getHostname
             const hostname = this._getHostname(config);
             if (hostname == null) {
                 this.log(`SDK Disabled: unresolved hostname.`);
@@ -65,7 +59,6 @@ export default function kountSDK(config, sessionID) {
             this.collectorURL = `https://${hostname}`;
             this.log(`collectorURL=${this.collectorURL}`);
 
-            // config-spa
             const configuredIsSPA = config.isSinglePageApp;
             if ((typeof configuredIsSPA === 'undefined') || (configuredIsSPA !== true && configuredIsSPA !== false)) {
                 this.log(`SDK Disabled: invalid isSinglePageApp:${configuredIsSPA}`);
@@ -74,13 +67,13 @@ export default function kountSDK(config, sessionID) {
             this.isSinglePageApp = configuredIsSPA;
             this.log(`isSinglePageApp=${this.isSinglePageApp}`);
 
-            // sessionID
             if ((typeof sessionID === 'undefined') || (sessionID.length === 0)) {
                 this.log('SDK Disabled: sessionID required.');
                 return false;
             }
             this.sessionID = sessionID;
-            // this.log(this.LOG_PREFIX + 'sessionID=' + this.sessionID);
+
+            this.kddcgid = this._newKDDCGID();
 
             this._communicateLatestSessionData();
 
@@ -92,12 +85,12 @@ export default function kountSDK(config, sessionID) {
             return true;
         },
 
-        _orchestrate: async function () {
+        _orchestrate: async function (generateNewKDDCGID) {
 
             const functionName = "_orchestrate";
 
             let thisFunctionOwnsSemaphoreLock = false;
-            
+
             try {
 
                 if (this.orchestrateSemaphoreLocked) {
@@ -107,29 +100,20 @@ export default function kountSDK(config, sessionID) {
 
                 this.orchestrateSemaphoreLocked = true;
                 thisFunctionOwnsSemaphoreLock = true;
-                
+
                 this.log(`${functionName} start...`);
 
-                this.serverConfig = await this._getServerConfig();
-
-                if (this.serverConfig.da.enabled) {
-                    if (config.triggers) {
-                        this.log(`${functionName} _runDA start...`);
-                        this._runDA(config.triggers, this.serverConfig.da.subdomain, this.serverConfig.da.orgId);
-                        this.log(`${functionName} _runDA end...`);
-                    } else {
-                        this.log(`${functionName} _runDA disabled:triggers missing.`);                       
-                    }
-                } else {
-                    this.log(`${functionName} _runDA disabled.`);                    
+                if (generateNewKDDCGID) {
+                    this.kddcgid = this._newKDDCGID();
                 }
+
+                this.serverConfig = await this._getServerConfig();
 
                 if (this.serverConfig.collector.run) {
                     this.log(`${functionName} runCollector start...`);
                     this.runCollector();
                     this.log(`${functionName} runCollector end...`);
                 } else {
-                    // fire callbacks
                     this.log(`${functionName} runCollector skipped...`);
                     this.callback('collect-begin', { SessionID: this.sessionID, KountClientID: this.kountClientID });
                     this.callback('collect-end', { SessionID: this.sessionID, KountClientID: this.kountClientID });
@@ -154,7 +138,7 @@ export default function kountSDK(config, sessionID) {
                 let msUntilNextOrchestrate = this.serverConfig.ttlms;
 
                 this.orchestrateTimeoutId = setTimeout(
-                    this._orchestrate.bind(this),
+                    this._orchestrate.bind(this, true),
                     msUntilNextOrchestrate
                 );
 
@@ -163,13 +147,12 @@ export default function kountSDK(config, sessionID) {
                 this.log(`${functionName} end...`);
 
                 this.orchestrateSemaphoreLocked = false;
-                
+
             }
         },
-        
-        //Wraps a promise so that the promise will reject if the promise is not resolved within a certain number of ms.
+
         _wrapPromiseInTimeout(msUntilTimeout, promise) {
-                    
+
             return new Promise((resolve, reject) => {
 
                 const timer = setTimeout(() => {
@@ -200,7 +183,7 @@ export default function kountSDK(config, sessionID) {
 
                 this.log(`${functionName} start...`);
 
-                let url = `${this.collectorURL}/cs/config?m=${this.kountClientID}&s=${this.sessionID}&sv=${this.KountSDKVersion}`;
+                let url = `${this.collectorURL}/cs/config?m=${this.kountClientID}&s=${this.sessionID}&sv=${this.KountSDKVersion}&kddcgid=${this.kddcgid}`;
 
                 const response = await this._wrapPromiseInTimeout(this.updateSDKServerConfigTimeoutInMS, fetch(url));
                 if (!response.ok) {
@@ -228,21 +211,17 @@ export default function kountSDK(config, sessionID) {
                                 app: true,
                                 battery: true,
                                 browser: true,
-                                da: false,
                                 exp: true,
                                 page: true,
                                 ui: true
                             }
-                        },
-                        da: {
-                            enabled: false
                         }
                     }
                 }
 
                 this.log(`${functionName} config: ${JSON.stringify(serverConfig)}`);
                 this.log(`${functionName} end...`);
-                return serverConfig    
+                return serverConfig
             }
 
         },
@@ -252,12 +231,9 @@ export default function kountSDK(config, sessionID) {
 
             let collectorConfig = this._translateCollectorConfig(jsonConfig)
 
-            let daConfig = this._translateDAConfig(jsonConfig);
-
             return {
                 ttlms: ttlms,
                 collector: collectorConfig,
-                da: daConfig
             }
         },
 
@@ -281,16 +257,16 @@ export default function kountSDK(config, sessionID) {
                 if ((typeof jsonConfig.collection == 'undefined') || (typeof jsonConfig.collection.feature_flags == 'undefined')) {
                     throw `invalid response JSON:${JSON.stringify(jsonConfig)}`
                 }
-                
+
                 if (typeof jsonConfig.collection.collect !== "boolean") {
                     throw `collect is not boolean: ${typeof collection.collect}`;
                 }
 
                 let runCollector = jsonConfig.collection.collect;
                 if (runCollector) {
-                    
+
                     const feature_flags = jsonConfig.collection.feature_flags
-    
+
                     if (typeof feature_flags.app !== "boolean") {
                         throw `app feature flag is not boolean: ${typeof feature_flags.app}`;
                     }
@@ -299,9 +275,6 @@ export default function kountSDK(config, sessionID) {
                     }
                     if (typeof feature_flags.browser !== "boolean") {
                         throw `browser feature flag is not boolean: ${typeof feature_flags.browser}`;
-                    }
-                    if (typeof feature_flags.da !== "boolean") {
-                        throw `da feature flag is not boolean: ${typeof feature_flags.da}`;
                     }
                     if (typeof feature_flags.exp !== "boolean") {
                         throw `exp feature flag is not boolean: ${typeof feature_flags.exp}`;
@@ -312,7 +285,7 @@ export default function kountSDK(config, sessionID) {
                     if (typeof feature_flags.ui !== "boolean") {
                         throw `ui feature flag is not boolean: ${typeof feature_flags.ui}`;
                     }
-    
+
                     collectorConfig = {
                         run: runCollector,
                         featureFlags: jsonConfig.collection.feature_flags
@@ -323,9 +296,9 @@ export default function kountSDK(config, sessionID) {
                     collectorConfig = {
                         run: runCollector,
                     };
-                    
+
                 }
-            
+
             } catch (e) {
 
                 let msg = `${functionName} error caught. e:${e}`;
@@ -341,7 +314,6 @@ export default function kountSDK(config, sessionID) {
                             app: true,
                             battery: true,
                             browser: true,
-                            da: false,
                             exp: true,
                             page: true,
                             ui: true
@@ -350,64 +322,32 @@ export default function kountSDK(config, sessionID) {
                 };
 
                 this.log(`${functionName} end...`);
-                return collectorConfig;    
+                return collectorConfig;
             }
 
         },
 
-        _translateDAConfig(jsonConfig) {
-
-            const functionName = "_translateDAConfig";
-
-            let daConfig = null
-
+        _newKDDCGID() {
+            let newKDDCGID = "invalid";
+            
             try {
-
-                this.log(`${functionName} start...`);
-
-                if (jsonConfig.da) {
-
-                    if (!jsonConfig.da.orgId) {
-                        throw `da.orgId missing.`;
-                    }
-    
-                    if (!jsonConfig.da.subdomain) {
-                        throw `da.subdomain missing.`;
-                    }
-    
-                    daConfig = {
-                        enabled: true,
-                        orgId: jsonConfig.da.orgId,
-                        subdomain: jsonConfig.da.subdomain
-                    };
-                    
+                if ((typeof crypto != 'undefined') && (typeof crypto.randomUUID != 'undefined')) {
+                    newKDDCGID = crypto.randomUUID();
                 } else {
-
-                    daConfig = {
-                        enabled: false
-                    };
-                    
-                    this.log(`${functionName} da disabled.`);
-
+                    const ALLOWED_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-1234567890";
+                    let kddcgid = "";
+                    for (let loopCount = 0; loopCount < 36; loopCount++) {
+                        kddcgid += ALLOWED_CHARS.charAt(Math.floor(Math.random() * ALLOWED_CHARS.length));
+                    }
+                    newKDDCGID = kddcgid;
                 }
-
             } catch (e) {
-
-                let msg = `${functionName} ${e}`;
-                this.log(msg);
-
+                this.log(`_newKDDCGID error:${e}`);
             } finally {
-
-                if (daConfig == null) {
-                    daConfig = {
-                        enabled: false
-                    };
-                }
-
-                this.log(`${functionName} end...`);
-                return daConfig    
+                this.log(`SDK kddcgid=${newKDDCGID}`);
             }
-
+            
+            return newKDDCGID;
         },
 
         _getHostname(config) {
@@ -455,7 +395,7 @@ export default function kountSDK(config, sessionID) {
             }
             return true;
         },
-        
+
         _communicateLatestSessionData() {
             try {
                 this.log('communicateLatestSessionData running...');
@@ -477,7 +417,7 @@ export default function kountSDK(config, sessionID) {
         async postNewSession(sessionID) {
             try {
                 this.log('postNewSession running...');
-                const url = `${this.collectorURL}/session/${sessionID}`;
+                const url = `${this.collectorURL}/session/${sessionID}?kddcgid=${this.kddcgid}`;
                 this._postToURL(url, 'postNewSession');
             } catch (e) {
                 this.addError(`postNewSession error:${e}`);
@@ -489,7 +429,7 @@ export default function kountSDK(config, sessionID) {
         async postChangeSession(sessionID, previousSessionID) {
             try {
                 this.log(`postChangeSession running: newSession: ${sessionID} prevSession: ${previousSessionID}`);
-                const url = `${this.collectorURL}/session/${this.sessionID}?previousSessionID=${previousSessionID}`;
+                const url = `${this.collectorURL}/session/${this.sessionID}?previousSessionID=${previousSessionID}&kddcgid=${this.kddcgid}`;
                 this._postToURL(url, 'postChangeSession');
             } catch (e) {
                 this.addError(`postChangeSession error:${e}`);
@@ -656,7 +596,7 @@ export default function kountSDK(config, sessionID) {
         async establishNewFPCV() {
             try {
                 this.log('establishNewFPCV running...');
-                let url = `${this.collectorURL}/cs/generatecookie?m=${this.kountClientID}&s=${this.sessionID}&sv=${this.KountSDKVersion}`;
+                let url = `${this.collectorURL}/cs/generatecookie?m=${this.kountClientID}&s=${this.sessionID}&sv=${this.KountSDKVersion}&kddcgid=${this.kddcgid}`;
                 const response = await fetch(url);
                 const json = await response.json();
                 if (json.value.length > 0) {
@@ -676,7 +616,7 @@ export default function kountSDK(config, sessionID) {
             try {
                 this.log('communicateExistingFPCV running...');
                 const url = `${this.collectorURL}/cs/storecookie`;
-                const payload = `m=${this.kountClientID}&s=${this.sessionID}&sv=${this.KountSDKVersion}&k=${value}`;
+                const payload = `m=${this.kountClientID}&s=${this.sessionID}&sv=${this.KountSDKVersion}&k=${value}&kddcgid=${this.kddcgid}`;
                 const request = new XMLHttpRequest();
                 request.onreadystatechange = () => {
                     if (request.readyState === 4 && request.status === 500) {
@@ -701,23 +641,27 @@ export default function kountSDK(config, sessionID) {
             const functionName = "_createIframe";
 
             try {
-                
+
                 this.log(`${functionName} running...`);
-                
+
                 const iframeId = 'ibody';
                 const priorIframe = document.getElementById(iframeId);
                 if (priorIframe !== null) {
                     priorIframe.remove();
                 }
 
-                const queryString = `m=${this.kountClientID}&s=${this.sessionID}&sv=${this.KountSDKVersion}`;
+                const queryString = `m=${this.kountClientID}&s=${this.sessionID}&sv=${this.KountSDKVersion}&kddcgid=${this.kddcgid}`;
+                let fragment = '';
+                if (this.isDebugEnabled) {
+                    fragment = '#console';
+                }
                 const iframe = document.createElement('iframe');
                 iframe.id = iframeId;
                 iframe.style.border = '0px';
                 iframe.style.height = '1px';
                 iframe.style.width = '1px';
                 iframe.style.position = 'absolute';
-                iframe.src = `${this.collectorURL}/logo.htm?${queryString}`;
+                iframe.src = `${this.collectorURL}/logo.htm?${queryString}${fragment}`;
                 document.getElementsByTagName('body')[0].appendChild(iframe);
 
                 if (typeof this.callbacks !== 'undefined') {
@@ -725,18 +669,34 @@ export default function kountSDK(config, sessionID) {
                 }
 
                 if (window.postMessage !== 'undefined' && window.onmessage !== 'undefined') {
-                    window.onmessage = (event) => {
-                        let data = null;
-                        if (event.origin === this.collectorURL) {
+                    let onMessageHandlerFunc = (event) => {
+                        try {
+                            if (event.origin !== this.collectorURL) {
+                                this.log(`window.onmessage doesn't handle event origin:[type:${event.type}, origin:${event.origin}]`);
+                                return;
+                            }
+
+                            if (!event.data) {
+                                throw new Error(`window.onmessage event has missing event.data:[type:${event.type}, origin:${event.origin}]`);
+                            }
+
+                            let data = null;
                             if (JSON) {
                                 data = JSON.parse(event.data);
                             } else {
                                 data = eval(event.data);
                             }
-                            if (!this.isSinglePageApp) {
-                                if (data.event === 'collect-end') {
-                                    this.detach(window, 'unload', this.unloadHandler);
-                                }
+
+                            if (!this.isSinglePageApp && data.event === 'collect-end') {
+                                this.detach(window, 'unload', this.unloadHandler);
+                            }
+
+                            if (!data) {
+                                throw new Error(`window.onmessage event has missing data:[type:${event.type}, origin:${event.origin}]`);
+                            }
+
+                            if (!data.params) {
+                                throw new Error(`window.onmessage event has missing data.params:[type:${event.type}, origin:${event.origin}, data:${event.data}]`);
                             }
 
                             const params = {};
@@ -756,17 +716,22 @@ export default function kountSDK(config, sessionID) {
                                 }
                             });
 
-                            this.isCompleted = true;
-
                             this.callback(data.event, params);
+
+                            this.log(`window.onmessage executed for event:[type:${event.type}, origin:${event.origin}, data:${event.data}]`);
+
+                        } catch (e) {
+                            this.log(`window.onmessage encountered an error: ${e}`);
                         }
                     };
+                    
+                    window.onmessage = onMessageHandlerFunc;
+
                     if (!this.isSinglePageApp) {
                         this.attach(window, 'unload', this.unloadHandler);
                     }
                 } else {
                     window.setTimeout(() => {
-                        this.isCompleted = true;
                         this.callback('collect-end', { SessionID: this.sessionID, KountClientID: this.kountClientID });
                     }, 3000);
                 }
@@ -784,9 +749,6 @@ export default function kountSDK(config, sessionID) {
             try {
 
                 this.log(`${functionName} running...`);
-
-                this.isCompleted = false;
-                setTimeout(() => { this.isCompleted = true; }, this.collectionCompleteTimeout);
 
                 this.coordinateFirstPartyCookieValues();
 
@@ -809,48 +771,9 @@ export default function kountSDK(config, sessionID) {
                         .then(() => this.log(`${functionName}: Collection Initiated`))
                         .catch(() => this.log(`${functionName}: Invalid/Missing First Party cookie`));
                 })();
-                
+
             } catch (e) {
                 this.addError(`${functionName} error:${e}`);
-            } finally {
-                this.log(`${functionName} ending...`);
-            }
-        },
-
-        _runDA(triggers, subdomain, orgId) {
-            const functionName = '_runDA';
-
-            try {
-                this.log(`${functionName} running...`);
-
-                this.log(`${functionName} setting da session store`);
-                var daScript = document.createElement('script');  
-
-                let daUrl = 'https://' + subdomain + '.callsign.com'
-                daScript.setAttribute('src',daUrl + '/in/web-sdk/v1/static/web-sdk.js');
-                document.head.appendChild(daScript);
-
-                const daConfig = {
-                    essx: daUrl,
-                    esto: orgId,
-                    ggow: sessionID,
-                    mosc: sessionID,
-                    mwel: "Kount",
-                    mwelseq: 1,
-                    mwelsub: "Kount",
-                    loco: false,
-                    ewps: false,
-                    reed: true,
-                    sanf:  JSON.stringify(triggers),
-                    timestamp: Date.now()
-                };
-
-                this.log(`${functionName} daConfig:${JSON.stringify(daConfig)}`)
-
-                sessionStorage.setItem('cx', JSON.stringify( daConfig ));                
-                this.log(`${functionName} da session store set`);
-            } catch(e) {
-                this.log(`${functionName} unexpected da error: ${e}`);
             } finally {
                 this.log(`${functionName} ending...`);
             }
@@ -899,12 +822,8 @@ export default function kountSDK(config, sessionID) {
                 sessionStorage.clear();
                 this.sessionID = sessionID;
                 this._communicateLatestSessionData();
-                this._orchestrate();
+                this._orchestrate(true);
             }
-        },
-
-        IsCompleted() {
-            return this.isCompleted;
         },
 
         log(message) {
@@ -1009,7 +928,6 @@ export default function kountSDK(config, sessionID) {
             return sdk;
         }
     } catch (e) {
-        //Elevate sdk log method?
     }
     return null;
 }
