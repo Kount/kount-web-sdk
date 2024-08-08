@@ -1,10 +1,12 @@
 /* eslint-disable no-throw-literal */
-export const KountSDKVersion = '2.0.0';
+export const KountSDKVersion = '2.1.0';
 
 export default function kountSDK(config, sessionID) {
 
     const sdk = {
 
+        implementationType: "module",
+        repositoryLocation: "github",
         KountSDKVersion,
         kountClientID: null,
         isSinglePageApp: false,
@@ -80,6 +82,8 @@ export default function kountSDK(config, sessionID) {
             this._orchestrate();
 
             this.log(`SDK Version=${this.KountSDKVersion}`);
+            this.log(`SDK Implementation=${this.implementationType}`);
+            this.log(`SDK Repository=${this.repositoryLocation}`);
             this.log('SDK started.');
 
             return true;
@@ -183,7 +187,17 @@ export default function kountSDK(config, sessionID) {
 
                 this.log(`${functionName} start...`);
 
-                let url = `${this.collectorURL}/cs/config?m=${this.kountClientID}&s=${this.sessionID}&sv=${this.KountSDKVersion}&kddcgid=${this.kddcgid}`;
+                let url = this.buildUrl({
+                        base:this.collectorURL,
+                        path:"/cs/config",
+                        parameters: {
+                            m: this.kountClientID,
+                            s: this.sessionID,
+                            sv: this.KountSDKVersion,
+                            kddcgid: this.kddcgid,
+                            impl: this.implementationType,
+                            repo: this.repositoryLocation
+                        }});
 
                 const response = await this._wrapPromiseInTimeout(this.updateSDKServerConfigTimeoutInMS, fetch(url));
                 if (!response.ok) {
@@ -329,7 +343,7 @@ export default function kountSDK(config, sessionID) {
 
         _newKDDCGID() {
             let newKDDCGID = "invalid";
-            
+
             try {
                 if ((typeof crypto != 'undefined') && (typeof crypto.randomUUID != 'undefined')) {
                     newKDDCGID = crypto.randomUUID();
@@ -346,7 +360,7 @@ export default function kountSDK(config, sessionID) {
             } finally {
                 this.log(`SDK kddcgid=${newKDDCGID}`);
             }
-            
+
             return newKDDCGID;
         },
 
@@ -417,8 +431,28 @@ export default function kountSDK(config, sessionID) {
         async postNewSession(sessionID) {
             try {
                 this.log('postNewSession running...');
-                const url = `${this.collectorURL}/session/${sessionID}?kddcgid=${this.kddcgid}`;
-                this._postToURL(url, 'postNewSession');
+                let response = await fetch(
+                    this.buildUrl({
+                        base: this.collectorURL,
+                        path: `/session/${sessionID}`,
+                        parameters: {
+                            kddcgid: this.kddcgid,
+                            impl:this.implementationType,
+                            repo: this.repositoryLocation,
+                        }
+                    }), {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'client-id': this.kountClientID
+
+                    },
+                });
+                if (response.status === 200 || response.status === 201) {
+                    this.log('postNewSession success');
+                } else {
+                    this.addError(`postNewSession unknown response: ${response.status}`);
+                }
             } catch (e) {
                 this.addError(`postNewSession error:${e}`);
             } finally {
@@ -429,40 +463,33 @@ export default function kountSDK(config, sessionID) {
         async postChangeSession(sessionID, previousSessionID) {
             try {
                 this.log(`postChangeSession running: newSession: ${sessionID} prevSession: ${previousSessionID}`);
-                const url = `${this.collectorURL}/session/${this.sessionID}?previousSessionID=${previousSessionID}&kddcgid=${this.kddcgid}`;
-                this._postToURL(url, 'postChangeSession');
+                let response = await fetch(
+                    this.buildUrl({
+                        base: this.collectorURL,
+                        path: `/session/${sessionID}`,
+                        parameters: {
+                            previousSessionID: previousSessionID,
+                            kddcgid: this.kddcgid,
+                            impl:this.implementationType,
+                            repo: this.repositoryLocation,
+                        }
+                    }), {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'client-id': this.kountClientID
+
+                    },
+                });
+                if (response.status === 200 || response.status === 201) {
+                    this.log('postChangeSession success');
+                } else {
+                    this.addError(`postChangeSession unknown response: ${response.status}`);
+                }
             } catch (e) {
                 this.addError(`postChangeSession error:${e}`);
             } finally {
                 this.log('postChangeSession ending...');
-            }
-        },
-
-        async _postToURL(url, calledFromFunc) {
-            try {
-                this.log(`_postToURL:${calledFromFunc} running...`);
-
-                const request = new XMLHttpRequest();
-
-                request.onreadystatechange = () => {
-                    if (request.readyState === XMLHttpRequest.DONE) {
-                        if (request.status === 200 || request.status === 201) {
-                            this.log(`${calledFromFunc} success.`);
-                        } else {
-                            this.addError(`${calledFromFunc} unknown response: ${request.status}`);
-                            this.log(`${this.error}:unknown response - ${request.status}`);
-                        }
-                    }
-                };
-
-                request.open('POST', url, true);
-                request.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
-                request.setRequestHeader('client-id', this.kountClientID);
-                request.send();
-            } catch (e) {
-                throw e;
-            } finally {
-                this.log(`_postToURL:${calledFromFunc} ending...`);
             }
         },
 
@@ -596,7 +623,17 @@ export default function kountSDK(config, sessionID) {
         async establishNewFPCV() {
             try {
                 this.log('establishNewFPCV running...');
-                let url = `${this.collectorURL}/cs/generatecookie?m=${this.kountClientID}&s=${this.sessionID}&sv=${this.KountSDKVersion}&kddcgid=${this.kddcgid}`;
+                let url = this.buildUrl({
+                        base:this.collectorURL,
+                        path:"/cs/generatecookie",
+                        parameters: {
+                            m: this.kountClientID,
+                            s: this.sessionID,
+                            sv: this.KountSDKVersion,
+                            kddcgid: this.kddcgid,
+                            impl: this.implementationType,
+                            repo: this.repositoryLocation
+                        }});
                 const response = await fetch(url);
                 const json = await response.json();
                 if (json.value.length > 0) {
@@ -615,22 +652,36 @@ export default function kountSDK(config, sessionID) {
         async communicateExistingFPCV(value) {
             try {
                 this.log('communicateExistingFPCV running...');
-                const url = `${this.collectorURL}/cs/storecookie`;
-                const payload = `m=${this.kountClientID}&s=${this.sessionID}&sv=${this.KountSDKVersion}&k=${value}&kddcgid=${this.kddcgid}`;
-                const request = new XMLHttpRequest();
-                request.onreadystatechange = () => {
-                    if (request.readyState === 4 && request.status === 500) {
-                        this.log('communicateExistingFPCV: invalid cookie');
-                        sdk.establishNewFPCV();
-                    }
-                    if (request.readyState === 4 && request.status === 200) {
-                        this.log('communicateExistingFPCV: valid cookie');
-                        sdk.storeFPCVInSession(value);
-                    }
-                };
-                request.open('POST', url, true);
-                request.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
-                request.send(payload);
+
+                let response = await fetch(
+                    this.buildUrl({
+                        base:this.collectorURL,
+                        path:'/cs/storecookie'
+                    }), {
+                    method: 'POST',
+                    body: this.buildParams({
+                            m: this.kountClientID,
+                            s: this.sessionID,
+                            sv: this.KountSDKVersion,
+                            k: value,
+                            kddcgid: this.kddcgid,
+                            impl: this.implementationType,
+                            repo: this.repositoryLocation
+                        }),
+                    headers: {
+                        "Content-Type": "application/x-www-form-urlencoded"
+                    },
+                });
+
+                if (response.status === 500) {
+                    this.log('communicateExistingFPCV: invalid cookie');
+                    sdk.establishNewFPCV();
+                }
+
+                if (response.status === 200) {
+                    this.log('communicateExistingFPCV: valid cookie');
+                    sdk.storeFPCVInSession(value);
+                }
             } catch (e) {
                 this.addError(`communicateExistingFPCV error:${e}`);
             }
@@ -650,18 +701,31 @@ export default function kountSDK(config, sessionID) {
                     priorIframe.remove();
                 }
 
-                const queryString = `m=${this.kountClientID}&s=${this.sessionID}&sv=${this.KountSDKVersion}&kddcgid=${this.kddcgid}`;
-                let fragment = '';
+                let url = this.buildUrl({
+                    base:this.collectorURL,
+                    path:`/logo.htm`,
+                    parameters:{
+                        m: this.kountClientID,
+                        s: this.sessionID,
+                        sv: this.KountSDKVersion,
+                        kddcgid: this.kddcgid,
+                        impl: this.implementationType,
+                        repo: this.repositoryLocation,
+                    },
+                });
+
                 if (this.isDebugEnabled) {
-                    fragment = '#console';
+                    url.hash = '#console';
                 }
+
+
                 const iframe = document.createElement('iframe');
                 iframe.id = iframeId;
                 iframe.style.border = '0px';
                 iframe.style.height = '1px';
                 iframe.style.width = '1px';
                 iframe.style.position = 'absolute';
-                iframe.src = `${this.collectorURL}/logo.htm?${queryString}${fragment}`;
+                iframe.src = url.toString();
                 document.getElementsByTagName('body')[0].appendChild(iframe);
 
                 if (typeof this.callbacks !== 'undefined') {
@@ -724,7 +788,7 @@ export default function kountSDK(config, sessionID) {
                             this.log(`window.onmessage encountered an error: ${e}`);
                         }
                     };
-                    
+
                     window.onmessage = onMessageHandlerFunc;
 
                     if (!this.isSinglePageApp) {
@@ -893,6 +957,21 @@ export default function kountSDK(config, sessionID) {
                     http.send(payload);
                 },
             };
+        },
+
+        buildUrl({base, path, parameters = {}}) {
+            let params = this.buildParams(parameters);
+            path = [...params].length == 0 ? path : path + "?" + params.toString();
+            let url = new URL(path, base);
+            return url;
+        },
+
+        buildParams(parameters = {}) {
+            let searchParams = new URLSearchParams();
+            for (const [key, value] of Object.entries(parameters)) {
+                searchParams.append(key, value);
+            }
+            return searchParams;
         },
 
         attach: (function attachFunc() {
