@@ -1,5 +1,5 @@
 /* eslint-disable no-throw-literal */
-export const KountSDKVersion = '2.1.0';
+export const KountSDKVersion = '2.2.1';
 
 export default function kountSDK(config, sessionID) {
 
@@ -298,6 +298,9 @@ export default function kountSDK(config, sessionID) {
                     }
                     if (typeof feature_flags.ui !== "boolean") {
                         throw `ui feature flag is not boolean: ${typeof feature_flags.ui}`;
+                    }
+                    if (typeof feature_flags.passLoc !== "boolean") {
+                        throw `passLoc feature flag is not boolean: ${typeof feature_flags.passLoc}`;
                     }
 
                     collectorConfig = {
@@ -687,6 +690,102 @@ export default function kountSDK(config, sessionID) {
             }
         },
 
+        _passiveLoc() {
+            const functionName = "_passiveLoc";
+            try {
+                this.log(`${functionName} start...`);
+
+                if (this.serverConfig.collector.featureFlags.passLoc) {
+                    if (navigator.geolocation) {
+                        navigator.permissions.query({ name: 'geolocation' }).then(
+                            (result) => {
+                                if (result.state === 'granted') {
+                                    navigator.geolocation.getCurrentPosition(
+                                        (position) => {
+                                            this._handleCurrentPosition(position);
+                                        },
+                                        (error) => {
+                                            console.error("navigator.geolocation error:", error);
+                                        },
+                                        {
+                                            enableHighAccuracy: true,
+                                            timeout: 5000,
+                                            maximumAge: 0,
+                                        }
+                                    );
+                                } else {
+                                    this.log("navigator.geolocation bypassed:" + result.state);
+                                }
+                            }
+                        );
+                    } else {
+                        this.log("navigator.geolocation unavailable");
+                    }
+                } else {
+                    this.log("passLoc disabled");
+                }
+            } catch (e) {
+                this.addError(`${functionName} error:${e}`);
+            } finally {
+                this.log(`${functionName} ending...`);
+            }
+        },
+
+        async _handleCurrentPosition(position) {
+            const functionName = "__handleCurrentPosition";
+            try {
+                this.log(`${functionName} start...`);
+
+                let url = this.buildUrl({
+                    base:this.collectorURL,
+                    path:'/cs/location'
+                });
+
+                let collectionTimestamp = Date.now();
+
+                let body =  JSON.stringify({
+                    merchant_id: this.kountClientID,
+                    session_id: this.sessionID,
+                    ddcGroupID: this.kddcgid,
+                    collection_timestamp: collectionTimestamp,
+                    location_data: {
+                        collection_timestamp: position.timestamp,
+                        latitude: position.coords.latitude,
+                        longitude: position.coords.longitude,
+                        location_accuracy: position.coords.accuracy,
+                        altitude: position.coords.altitude,
+                        altitude_accuracy: position.coords.altitudeAccuracy,
+                        speed: position.coords.speed,
+                        heading: position.coords.heading
+                    }
+                });
+
+                let headers = {
+                    "Content-Type": "application/json"
+                };
+
+                let options = {
+                    method: 'POST',
+                    body: body,
+                    headers: headers
+                };
+
+                let response = await fetch(
+                    url,
+                    options
+                );
+
+                if (response.status != 200) {
+                    this.log(`${functionName} ${url} had response status:${response.status}`);
+                }
+
+            } catch (e) {
+                this.addError(`${functionName} error:${e}`);
+            } finally {
+                this.log(`${functionName} ending...`);
+            }
+        },
+
         _createIframe() {
 
             const functionName = "_createIframe";
@@ -744,12 +843,7 @@ export default function kountSDK(config, sessionID) {
                                 throw new Error(`window.onmessage event has missing event.data:[type:${event.type}, origin:${event.origin}]`);
                             }
 
-                            let data = null;
-                            if (JSON) {
-                                data = JSON.parse(event.data);
-                            } else {
-                                data = eval(event.data);
-                            }
+                            let data = JSON.parse(event.data);
 
                             if (!this.isSinglePageApp && data.event === 'collect-end') {
                                 this.detach(window, 'unload', this.unloadHandler);
@@ -819,6 +913,7 @@ export default function kountSDK(config, sessionID) {
                 const waitForFirstParty = (timeoutInMS, intervalBetweenChecksInMS) => new Promise((resolve, reject) => {
                     const checkForFirstParty = () => {
                         if (sessionStorage.getItem(this.FPCV_SESSION_STORAGE_KEY) !== '') {
+                            this._passiveLoc();
                             this._createIframe();
                             resolve();
                         } else if ((timeoutInMS -= intervalBetweenChecksInMS) < 0) {
