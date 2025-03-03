@@ -1,5 +1,5 @@
 /* eslint-disable no-throw-literal */
-export const KountSDKVersion = '2.2.1';
+export const KountSDKVersion = '2.2.2';
 
 export default function kountSDK(config, sessionID) {
 
