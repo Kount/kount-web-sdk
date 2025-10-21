@@ -820,6 +820,7 @@ export default function kountSDK(config, sessionID) {
 
                 const iframe = document.createElement('iframe');
                 iframe.id = iframeId;
+                iframe.title = "kount-fraud-sdk-iframe";
                 iframe.style.border = '0px';
                 iframe.style.height = '1px';
                 iframe.style.width = '1px';
