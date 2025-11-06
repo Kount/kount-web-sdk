@@ -1,5 +1,5 @@
 /* eslint-disable no-throw-literal */
-export const KountSDKVersion = '2.2.2';
+export const KountSDKVersion = '2.2.3';
 
 export default function kountSDK(config, sessionID) {
 
@@ -824,6 +824,7 @@ export default function kountSDK(config, sessionID) {
                 iframe.style.height = '1px';
                 iframe.style.width = '1px';
                 iframe.style.position = 'absolute';
+                iframe.setAttribute("aria-hidden", "true");
                 iframe.src = url.toString();
                 document.getElementsByTagName('body')[0].appendChild(iframe);
 
