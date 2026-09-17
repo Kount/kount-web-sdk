@@ -1,5 +1,5 @@
 /* eslint-disable no-throw-literal */
-export const KountSDKVersion = '2.2.3';
+export const KountSDKVersion = '2.2.4';
 
 export default function kountSDK(config, sessionID) {
 
@@ -352,12 +352,15 @@ export default function kountSDK(config, sessionID) {
                     newKDDCGID = crypto.randomUUID();
                 } else {
                     const ALLOWED_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-1234567890";
+                    const CHAR_LENGTH = 36;
                     let kddcgid = "";
-                    for (let loopCount = 0; loopCount < 36; loopCount++) {
+                    for (let loopCount = 0; loopCount < CHAR_LENGTH; loopCount++) {
                         kddcgid += ALLOWED_CHARS.charAt(Math.floor(Math.random() * ALLOWED_CHARS.length));
                     }
                     newKDDCGID = kddcgid;
                 }
+                const PREFIX = "c5";
+                newKDDCGID = PREFIX + newKDDCGID.substring(PREFIX.length);
             } catch (e) {
                 this.log(`_newKDDCGID error:${e}`);
             } finally {
@@ -746,7 +749,7 @@ export default function kountSDK(config, sessionID) {
                 let body =  JSON.stringify({
                     merchant_id: this.kountClientID,
                     session_id: this.sessionID,
-                    ddcGroupID: this.kddcgid,
+                    kddcgid: this.kddcgid,
                     collection_timestamp: collectionTimestamp,
                     location_data: {
                         collection_timestamp: position.timestamp,
@@ -847,7 +850,7 @@ export default function kountSDK(config, sessionID) {
                             let data = JSON.parse(event.data);
 
                             if (!this.isSinglePageApp && data.event === 'collect-end') {
-                                this.detach(window, 'unload', this.unloadHandler);
+                                this.detach(window, 'pagehide', this._boundUnloadHandler);
                             }
 
                             if (!data) {
@@ -887,7 +890,8 @@ export default function kountSDK(config, sessionID) {
                     window.onmessage = onMessageHandlerFunc;
 
                     if (!this.isSinglePageApp) {
-                        this.attach(window, 'unload', this.unloadHandler);
+                        this._boundUnloadHandler = this.unloadHandler.bind(this);
+                        this.attach(window, 'pagehide', this._boundUnloadHandler);
                     }
                 } else {
                     window.setTimeout(() => {
@@ -1006,13 +1010,16 @@ export default function kountSDK(config, sessionID) {
         },
 
         unloadHandler(event) {
-            const endpoint = 'fin';
-            const formData = {
-                n: 'collect-end', com: 'false', et: 0, s: this.sessionID, m: this.kountClientID,
-            };
+            const url = `${this.collectorURL}/fin`;
+            const formData = new URLSearchParams({
+                n: 'collect-end', com: 'false', et: 0, s: this.sessionID, m: this.kountClientID, kddcgid: this.kddcgid,
+            });
             try {
-                const http = this.getXMLHttpRequest(endpoint, 'POST');
-                http.send(formData);
+                if (typeof navigator.sendBeacon === 'function') {
+                    navigator.sendBeacon(url, formData);
+                } else {
+                    fetch(url, { method: 'POST', body: formData, keepalive: true });
+                }
             } catch (e) {}
         },
 
